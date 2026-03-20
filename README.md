@@ -58,3 +58,86 @@ Automated Documentation: Replaces 80% of manual "data tracking" forms with autom
 Data-Model Decoupling: Tracks lineage even when data and models are managed by different teams.
 
 FAIR Compliance: Every data version has a fingerprint, timestamp, and responsible author, meeting the highest standards for clinical data audits.
+
+📜 MAI-T1D Auto-Profiling System: Data Definition Guide
+This document defines the schema for the MAI-T1D Data Provenance System. It ensures every data node is captured with its lineage (Parent-Child) and specific biological/technical metadata.
+
+🟢 WORK PHASE: PREPARE
+This phase covers the transition from raw biological samples to machine-learning-ready features.
+
+1. Raw HPAP Data
+Definition: The initial data generated directly from the HPAP lab.
+
+Required Fields:
+
+Data Modality: e.g., scRNA-seq, snATAC, Imaging.
+
+Batch / Lab Source: Originating facility and batch ID.
+
+Cell Type: Initial targeted cell population.
+
+2. QC & Filtering
+Definition: The "cleaning" stage where noise is removed.
+
+Required Fields:
+
+Doublet Removal: Method used to exclude double-cell droplets.
+
+Annotation Refinement: Updates or corrections to cell type labels.
+
+Cell Integration: Method used to merge different batches (e.g., Harmony, Seurat).
+
+3. Metadata Alignment
+Definition: Enriching biological data with clinical donor context.
+
+Required Fields:
+
+Donor ID Linkage: Unique identifier mapping data to a specific donor.
+
+Disease Duration: Time since T1D onset for the donor.
+
+Antibody Profile: Autoantibody status (e.g., GAD+, ZnT8-).
+
+4. AI-Ready Data Construction
+Definition: Final feature engineering before model training.
+
+Required Fields:
+
+Tokenization: Method for converting sequences/features into tokens.
+
+Peak-gene Pairing: Mapping regulatory regions to gene expression.
+
+Dimensional Reduction: Techniques like PCA, UMAP, or t-SNE parameters.
+
+🔵 WORK PHASE: TRAIN
+This phase documents the training process and the resulting model behavior.
+
+5. Model Training / Evaluation
+Definition: Capturing the "brain" of the AI and its performance.
+
+Required Fields:
+
+Which Model: Model architecture/name (e.g., scGPT v2).
+
+Input or Validation: Defines if the file is training data or a validation set.
+
+Training Timestamp: Exact date and time the training job was executed.
+
+Contact: Principal investigator or lead researcher responsible.
+
+🔴 WORK PHASE: POST-TRAIN
+This phase ensures long-term reproducibility and deployment tracking.
+
+6. Registry & Version Tracking
+Definition: Finalizing the artifact for the knowledge graph registry.
+
+Required Fields:
+
+Dataset Version ID: Unique version for the data bundle.
+
+Model Version ID: Unique version for the trained weights.
+
+QC Pipeline Version: Version of the code used for preprocessing.
+
+Git / Storage Path: Direct link to the source code (GitHub) and file storage (S3/Azure).
+
