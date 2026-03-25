@@ -1,4 +1,5 @@
 *.csv
+!demo_*.csv
 *.xlsx
 .venv/
 __pycache__/

@@ -1,0 +1,10 @@
+model_name,model_version,cell_type,f1_score,precision,recall,support_cells,auroc,eval_set,eval_date,architecture,epochs_trained,batch_size,optimizer,hardware,framework,training_data_version,training_donor_count,holdout_strategy,known_issues
+scFM-T1D,v1.0,beta,0.951,0.963,0.940,14820,0.991,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
+scFM-T1D,v1.0,alpha,0.923,0.941,0.906,8640,0.978,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
+scFM-T1D,v1.0,delta,0.887,0.902,0.873,3210,0.961,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,Low support — only 3 donors with delta cells
+scFM-T1D,v1.0,ductal,0.912,0.928,0.897,5430,0.974,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
+scFM-T1D,v1.0,acinar,0.876,0.891,0.862,4120,0.958,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
+scFM-T1D,v1.0,macrophage,0.843,0.867,0.820,1870,0.943,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,Rare population — may underperform on external cohorts
+scFM-T1D,v1.0,endothelial,0.901,0.918,0.885,2340,0.967,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
+scFM-T1D,v1.0,macro_avg,0.899,0.916,0.883,40430,0.967,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
+scFM-T1D,v1.0,weighted_avg,0.930,0.945,0.916,40430,0.979,scRNA-v2.1-20pct-holdout,2025-11-10,scGPT 70M params,100,512,AdamW,8x A100 80GB,PyTorch 2.1,v2.1,8,20pct stratified by donor,None
