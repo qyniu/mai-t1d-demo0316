@@ -1,143 +1,263 @@
-🌟 Vision
-The MAI-T1D Provenance Engine is a lightweight CLI-based version control system designed to capture biological metadata at the moment of generation. It automates the documentation process for researchers and constructs a real-time Knowledge Graph from Raw Data → QC → Metadata → AI-Ready → Model, ensuring FAIR (Findable, Accessible, Interoperable, Reusable) standards for T1D research.
+# MAI-T1D Governance CLI
 
-🛠️ Core Modules
-1. Identity & Secure Audit
-Command: Automatic initialization on first run.
+A lightweight command-line provenance engine for the MAI-T1D (Michigan AI for Type 1 Diabetes) project. It records every step of the research pipeline — from raw HPAP biobank data to trained foundation models and downstream clinical tasks — as a structured, auditable knowledge graph committed to local JSON files.
 
-Function: Binds every commit to a specific User Name, ORCID, and Lab ID.
+---
 
-Value: Creates an immutable audit trail, solving the "who touched this data" problem in collaborative clinical research.
+## Overview
 
-2. Intelligent Profiling Extractor
-Content Fingerprinting (SHA-256): Generates a unique 12-character ID based on file content. Any 1-byte change in the data results in a new ID, preventing version confusion.
+Modern AI-for-biology research involves long chains of data transformations across multiple teams and institutions. When a dataset changes, is retracted, or a pipeline is updated, it is often unclear which downstream models and analyses are affected. This tool solves that by:
 
-Auto-Profiling: Automatically detects biological stats such as Unique Donor Counts, data dimensions, and missing value ratios.
+- Treating every data artifact and model as a **typed node** in a knowledge graph
+- Recording every transformation as a **labeled edge** (USED, TRAINED_ON, DOCUMENTED_BY, etc.)
+- Linking each commit to its **known KG identity** (e.g., `proc_scrna`, `model_scfm`)
+- Enabling **impact propagation analysis** — instantly showing which nodes are outdated or under compliance hold when upstream data changes
 
-AI-Generated Summaries: Integrated with Gemini Flash LLM to generate technical descriptions (e.g., "This dataset contains 5,000 cell samples with Harmony batch correction applied").
+The schema and node registry are aligned with `kg_demo_v9.jsx`, the interactive D3 knowledge graph visualization for this project.
 
-3. Provenance Commit & Mapping
-Strictly aligned with T1D research practices, supporting specialized node types:
+---
 
-RAW: Captures Modality (scRNA/Imaging), Batch, and Storage Links.
+## Quick Start
 
-QC: Tracks Doublet Removal, Labeling Tools, and Batch Correction methods.
+### Prerequisites
 
-METADATA: Links Donor IDs, Disease Duration, and Antibody Profiles.
+```bash
+pip install pandas
+```
 
-AI-READY: Documents Tokenization and Dimensionality Reduction parameters.
+### Run
 
-MODEL: Records Architecture, Validation Metrics (F1-Score), and Contact info.
+```bash
+python mai_t1d0325.py
+```
 
-4. Recursive Governance & Alerting (The "Kill Switch")
-Command: Selection 2. Alert System.
+On first run, you will be prompted to set your name and lab ID. This is saved to `~/.bio_config` and reused in all future sessions.
 
-Logic: If a data node is flagged as AFFECTED (e.g., due to contamination or bias), the engine recursively propagates this status downstream.
+---
 
-Value: Instantly identifies and isolates all downstream QC files, matrices, and AI models that relied on the compromised data, ensuring research integrity.
+## Menu Options
 
-🚀 Quick Start
-Prerequisites
-Bash
-pip install pandas requests
-Execution
-Bash
-python mai_t1d0316.py
-Typical Workflow
-Setup: Complete the one-time ORCID identity binding.
+```
+1. Commit Node       — Record a data artifact or model with full provenance metadata
+2. View Lineage Log  — Visualize the lineage tree and run impact analysis
+3. Edit Profile      — Update your name or lab ID stored in ~/.bio_config
+```
 
-Commit: Select 1 and provide a CSV path. The engine fingerprints the file and calls the AI for profiling.
+---
 
-Audit: Select 3 to view the Provenance Log (a hierarchical tree of your research history).
+## Option 1: Commit Node
 
-Alert: Input a Node ID to trigger a system-wide risk isolation if data issues are found.
+Records a file as a node in the knowledge graph. The workflow has four steps:
 
-📊 Solutions for Modern Research
-Automated Documentation: Replaces 80% of manual "data tracking" forms with automated CLI capture.
+### Step 1 — File paths
 
-Data-Model Decoupling: Tracks lineage even when data and models are managed by different teams.
+```
+[1/4] Child Data Path: /path/to/your/file.h5ad
+      Parent Data Path(s) (comma-separated, or 'ROOT'): /path/to/parent.h5ad
+```
 
-FAIR Compliance: Every data version has a fingerprint, timestamp, and responsible author, meeting the highest standards for clinical data audits.
+- **Child**: the artifact you are committing (any file type)
+- **Parent**: the upstream artifact this was derived from; use `ROOT` for source data with no local parent
+- **Multiple parents** are supported (comma-separated) — required for multi-modal model training (e.g., Genomic FM trained on scRNA + scATAC + WGS simultaneously)
 
-📜 MAI-T1D Auto-Profiling System: Data Definition Guide
-This document defines the schema for the MAI-T1D Data Provenance System. It ensures every data node is captured with its lineage (Parent-Child) and specific biological/technical metadata.
+Each file is fingerprinted with SHA-256 (12-char prefix) as its unique node ID.
 
-🟢 WORK PHASE: PREPARE
-This phase covers the transition from raw biological samples to machine-learning-ready features.
+### Step 2 — Work phase
 
-1. Raw HPAP Data
-Definition: The initial data generated directly from the HPAP lab.
+```
+  1. Prepare
+  2. Train
+  3. Post-train
+  4. Governance
+  5. Downstream
+```
 
-Required Fields:
+### Step 3 — Category
 
-Data Modality: e.g., scRNA-seq, snATAC, Imaging.
+Each phase contains one or more categories with specific metadata fields:
 
-Batch / Lab Source: Originating facility and batch ID.
+| Phase | Category | Edge label | Node type |
+|-------|----------|-----------|-----------|
+| Prepare | Raw HPAP Data | _(source)_ | RawData |
+| Prepare | QC & Filtering | USED | Pipeline |
+| Prepare | Metadata Alignment | WAS_GENERATED_BY | ProcessedData |
+| Prepare | AI-Ready Data Construction | WAS_GENERATED_BY | ProcessedData |
+| Train | Model Training / Evaluation | TRAINED_ON | Model |
+| Post-train | Registry & Version Tracking | _(registry)_ | PostTrainRegistry |
+| Governance | Dataset Card | DOCUMENTED_BY | DatasetCard |
+| Governance | Model Card | DOCUMENTED_BY | ModelCard |
+| Downstream | Downstream Task | ENABLES | DownstreamTask |
 
-Cell Type: Initial targeted cell population.
+### Step 4 — Link to known KG node (optional)
 
-2. QC & Filtering
-Definition: The "cleaning" stage where noise is removed.
+After selecting a category, the CLI shows a list of pre-registered nodes from the MAI-T1D knowledge graph that match the node type. Selecting one:
 
-Required Fields:
+- Stamps the commit with a `known_node_id` (e.g., `proc_scrna`, `model_scfm`)
+- Pre-fills relevant metadata fields from the KG registry (version, lighthouse path, architecture, etc.)
+- Connects the local file to its semantic identity in the broader graph
 
-Doublet Removal: Method used to exclude double-cell droplets.
+```
+  Known 'Model' nodes in the KG:
+    1. [model_scfm]  scFM-T1D v1
+    2. [model_genomic]  Genomic FM v1 (EPCOT-v2)
+    0. None / New node
+  Link to known node (number, or Enter to skip): 1
+```
 
-Annotation Refinement: Updates or corrections to cell type labels.
+### Auto-fill for Model Training
 
-Cell Integration: Method used to merge different batches (e.g., Harmony, Seurat).
+When committing a **Model Training / Evaluation** node, the CLI automatically:
 
-3. Metadata Alignment
-Definition: Enriching biological data with clinical donor context.
+1. Loads all fields from any prior commit for the same model file (re-commit scenario)
+2. Loops over all parent paths and fetches their commit metadata (`Training_Data_Path`, `Training_Data_Upload_Time`, `Pretraining_Data`, modality) — stored as `edge_train_metadata` on the TRAINED_ON edge
+3. Defaults `Developed_By` to the current user
 
-Required Fields:
+### Output JSON
 
-Donor ID Linkage: Unique identifier mapping data to a specific donor.
+Each commit is saved as `commit_<Category>_<hash>.json` in the script directory:
 
-Disease Duration: Time since T1D onset for the donor.
+```json
+{
+  "node_id": "4dd68ec04612",
+  "parent_ids": ["cead8f2bf3ce"],
+  "parent_id": "cead8f2bf3ce",
+  "edge_label": "TRAINED_ON",
+  "node_type": "Model",
+  "known_node_id": "model_scfm",
+  "phase": "Train",
+  "category": "Model Training / Evaluation",
+  "governance_status": "HEALTHY",
+  "metadata": {
+    "author": "Qingyuan Niu",
+    "timestamp": "2026-03-25T14:22:00.000000",
+    "file_path": "/absolute/path/to/model.pt",
+    "properties": { ... },
+    "data_profiling": { ... },
+    "edge_train_metadata": [
+      { "parent_path": "...", "modality": "scRNA-seq", "committed_at": "..." }
+    ]
+  }
+}
+```
 
-Antibody Profile: Autoantibody status (e.g., GAD+, ZnT8-).
+---
 
-4. AI-Ready Data Construction
-Definition: Final feature engineering before model training.
+## Option 2: View Lineage Log
 
-Required Fields:
+### 2a — Full lineage tree
 
-Tokenization: Method for converting sequences/features into tokens.
+Loads all local commits and prints a DFS tree from ROOT, showing edge labels and governance status icons:
 
-Peak-gene Pairing: Mapping regulatory regions to gene expression.
+```
+ROOT
+└─[USED]─► ✅ [qc_scrna]  scRNA QC Pipeline v3.1
+   └─[WAS_GENERATED_BY]─► ✅ [proc_scrna]  scRNA Dataset v2.1
+      ├─[DOCUMENTED_BY]─► ✅ [dc_scrna]  Dataset Card (scRNA v2.1)
+      └─[TRAINED_ON]─► ⚠️  [model_scfm]  scFM-T1D v1
+         └─[ENABLES]─► ✅ [task_celltype]  Cell-type Classification
+```
 
-Dimensional Reduction: Techniques like PCA, UMAP, or t-SNE parameters.
+Status icons: `✅ HEALTHY` | `⚠️ OUTDATED` | `🚨 COMPLIANCE_HOLD`
 
-🔵 WORK PHASE: TRAIN
-This phase documents the training process and the resulting model behavior.
+### 2b — Lineage by model / subgraph
 
-5. Model Training / Evaluation
-Definition: Capturing the "brain" of the AI and its performance.
+Filters commits to one of four predefined views (aligned with the JSX knowledge graph):
 
-Required Fields:
+| # | View | Scope |
+|---|------|-------|
+| 1 | scFM lineage | raw_scrna → qc → proc → dc → model_scfm → mc → tasks |
+| 2 | Genomic FM lineage | all 3 raw modalities → model_genomic → mc → eQTL/epigenome tasks |
+| 3 | HPAP-002 downstream | HPAP-002 donor trace through both models |
+| 4 | Full graph | all committed nodes |
 
-Which Model: Model architecture/name (e.g., scGPT v2).
+### 2c — Impact analysis
 
-Input or Validation: Defines if the file is training data or a validation set.
+Simulates what happens when a node changes. Three pre-defined scenarios:
 
-Training Timestamp: Exact date and time the training job was executed.
+| # | Scenario | Trigger type | Propagates to | New status |
+|---|----------|-------------|---------------|------------|
+| 1 | Dataset Revised (Type B) | ProcessedData | DatasetCard, Model, ModelCard | OUTDATED |
+| 2 | Consent Withdrawn (Type C) | ProcessedData | DatasetCard, Model, ModelCard | COMPLIANCE_HOLD |
+| 3 | QC Pipeline Updated | Pipeline | ProcessedData, Model | OUTDATED |
 
-Contact: Principal investigator or lead researcher responsible.
+Workflow:
+1. Select a scenario
+2. Select the trigger node from committed nodes of that type
+3. The engine BFS-traverses all downstream nodes and lists affected ones with per-type notes
+4. Optionally flag all affected nodes — updates `governance_status` in their JSON files and appends a timestamped `governance_flags` entry
 
-🔴 WORK PHASE: POST-TRAIN
-This phase ensures long-term reproducibility and deployment tracking.
+---
 
-6. Registry & Version Tracking
-Definition: Finalizing the artifact for the knowledge graph registry.
+## Option 3: Edit Profile
 
-Required Fields:
+Update your display name or lab ID without leaving the program:
 
-Dataset Version ID: Unique version for the data bundle.
+```
+✏️  EDIT PROFILE  (press Enter to keep current value)
+   > Name [Qingyuan Niu]: Jane Smith
+   > Lab ID [UMICH-MAI]:
+   ✅ Profile updated — Name: Jane Smith | Lab: UMICH-MAI
+```
 
-Model Version ID: Unique version for the trained weights.
+Profile is stored at `~/.bio_config` (e.g., `C:\Users\<you>\.bio_config` on Windows).
 
-QC Pipeline Version: Version of the code used for preprocessing.
+---
 
-Git / Storage Path: Direct link to the source code (GitHub) and file storage (S3/Azure).
+## Known Node Registry
 
+The following 20 nodes are pre-registered from the MAI-T1D knowledge graph and can be linked at commit time:
+
+| ID | Label | Type |
+|----|-------|------|
+| `raw_scrna` | HPAP-002 scRNA-seq | RawData |
+| `raw_atac` | HPAP cohort scATAC-seq | RawData |
+| `raw_wgs` | HPAP cohort WGS | RawData |
+| `qc_scrna` | scRNA QC Pipeline v3.1 | Pipeline |
+| `qc_atac` | scATAC QC Pipeline v2.0 | Pipeline |
+| `qc_wgs` | WGS Variant Calling v1.2 | Pipeline |
+| `proc_scrna` | scRNA Dataset v2.1 | ProcessedData |
+| `proc_atac` | scATAC Dataset v1.3 | ProcessedData |
+| `proc_wgs` | WGS Variant Matrix v1.0 | ProcessedData |
+| `dc_scrna` | Dataset Card (scRNA v2.1) | DatasetCard |
+| `dc_atac` | Dataset Card (scATAC v1.3) | DatasetCard |
+| `dc_wgs` | Dataset Card (WGS v1.0) | DatasetCard |
+| `model_scfm` | scFM-T1D v1 | Model |
+| `model_genomic` | Genomic FM v1 (EPCOT-v2) | Model |
+| `mc_scfm` | Model Card (scFM v1) | ModelCard |
+| `mc_genomic` | Model Card (Genomic FM v1) | ModelCard |
+| `task_celltype` | Cell-type Classification | DownstreamTask |
+| `task_deconv` | Islet Deconvolution | DownstreamTask |
+| `task_eqtl` | eQTL Prediction | DownstreamTask |
+| `task_epigenome` | Epigenome Prediction | DownstreamTask |
+
+---
+
+## Edge Types
+
+| Label | Meaning | Color in KG |
+|-------|---------|-------------|
+| USED | Raw data feeds into a QC pipeline | Blue |
+| WAS_GENERATED_BY | Pipeline produces a processed dataset | Green |
+| TRAINED_ON | Processed data used to train a model (with rich edge metadata) | Purple |
+| DOCUMENTED_BY | Dataset or model is described by a Card | Orange (dashed) |
+| LINKED_TO | Model Card references a Dataset Card | Red (dashed) |
+| ENABLES | Model enables a downstream clinical task | Gray |
+
+---
+
+## File Structure
+
+```
+demo/
+├── mai_t1d0325.py              # Main CLI
+├── README.md                   # This file
+├── EXPANSION_PLAN.md           # Implementation plan (KG → CLI expansion)
+├── ~/.bio_config               # User profile (name, lab ID) — outside repo
+└── commit_*.json               # Generated provenance records (one per committed node)
+```
+
+---
+
+## Institutions
+
+University of Michigan · Vanderbilt University · Cornell University · University of South Florida · UCLA
