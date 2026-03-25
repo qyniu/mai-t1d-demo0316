@@ -261,3 +261,18 @@ demo/
 ## Institutions
 
 University of Michigan · Vanderbilt University · Cornell University · University of South Florida · UCLA
+
+---
+
+## Deploy (Vercel) with hidden API key
+
+1. Push this folder (`mai-t1d-demo0316`) to GitHub.
+2. In Vercel, import the repo and set **Root Directory** to `mai-t1d-demo0316`.
+3. Set environment variable in Vercel project settings:
+   - `ANTHROPIC_API_KEY=...`
+4. Deploy.
+
+Notes:
+- Frontend calls `/api/anthropic/messages`.
+- API key stays only on server (Vercel env var), never exposed to browser code.
+- Local development still works with `.env` + `npm run dev`.
