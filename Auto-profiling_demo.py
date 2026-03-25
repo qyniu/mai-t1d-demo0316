@@ -431,12 +431,12 @@ def view_lineage_log():
 def run_bio_cli():
     if not os.path.exists(CONFIG_PATH):
         print("🔧 Initializing Bio-Config...")
-        cfg = {"user": input("Enter Name: "), "lab": input("Enter Lab ID: ")}
+        cfg = {"user": input("Enter Name: "), "lab": input("Enter Lab ID: "), "orcid": input("Enter ORCID (e.g. 0000-0000-0000-0000, or leave blank): ")}
         with open(CONFIG_PATH, 'w') as f: json.dump(cfg, f)
 
     with open(CONFIG_PATH, 'r') as f: config = json.load(f)
 
-    print(f"\n🚀 MAI-T1D GOVERNANCE SYSTEM | User: {config['user']} | Lab: {config.get('lab', 'N/A')}")
+    print(f"\n🚀 MAI-T1D GOVERNANCE SYSTEM | User: {config['user']} | Lab: {config.get('lab', 'N/A')} | ORCID: {config.get('orcid', 'N/A')}")
     print("1. Commit Node | 2. View Lineage Log | 3. Edit Profile")
     choice = input("Select Option: ")
 
@@ -583,8 +583,9 @@ def run_bio_cli():
     elif choice == '3':
         print(f"\n✏️  EDIT PROFILE  (press Enter to keep current value)")
         fields = [
-            ("user", "Name"),
-            ("lab",  "Lab ID"),
+            ("user",  "Name"),
+            ("lab",   "Lab ID"),
+            ("orcid", "ORCID"),
         ]
         for key, label in fields:
             current = config.get(key, "")
@@ -593,7 +594,7 @@ def run_bio_cli():
                 config[key] = val
         with open(CONFIG_PATH, "w") as f:
             json.dump(config, f, indent=4)
-        print(f"   ✅ Profile updated — Name: {config['user']} | Lab: {config.get('lab','')}")
+        print(f"   ✅ Profile updated — Name: {config['user']} | Lab: {config.get('lab','')} | ORCID: {config.get('orcid','')}")
     else:
         print("Invalid option.")
 
