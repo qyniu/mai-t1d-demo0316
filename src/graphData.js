@@ -16,6 +16,7 @@ export const EDGE_STYLE = {
   "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
   "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
   "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
+  "HAS_DONOR":        { color:"#0ea5e9", dash:"2,2",  width:1.2 },
 };
 
 export const EDGE_LEGEND = [
@@ -25,6 +26,7 @@ export const EDGE_LEGEND = [
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
   { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
   { key:"ENABLES",          label:"ENABLES" },
+  { key:"HAS_DONOR",        label:"HAS_DONOR" },
 ];
 
 //  NODES 

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState, useCallback } from "react";
+﻿import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import * as d3 from "d3";
 
 import { TYPE, EDGE_STYLE, EDGE_LEGEND, NODES, EDGES } from "./graphData";
@@ -6,6 +6,55 @@ import { TYPE, EDGE_STYLE, EDGE_LEGEND, NODES, EDGES } from "./graphData";
 //  HELPERS: safe edge id extraction 
 const edgeSrcId = e => typeof e.source === "object" ? e.source.id : e.source;
 const edgeTgtId = e => typeof e.target === "object" ? e.target.id : e.target;
+const DONOR_NODE_PREFIX = "donor__";
+
+function donorCountForRawNode(node) {
+  if (!node || node.type !== "RawData") return 0;
+  const donorText = node.detail?.Donors;
+  if (typeof donorText === "string") {
+    const m = donorText.match(/\d+/);
+    if (m) return Number(m[0]);
+  } else if (typeof donorText === "number") {
+    return donorText;
+  }
+  if (node.detail?.Donor) return 1;
+  return 0;
+}
+
+function donorIdForRawNode(node, index) {
+  if (index === 0 && node.detail?.Donor) return String(node.detail.Donor);
+  return `HPAP-${String(index + 1).padStart(3, "0")}`;
+}
+
+function buildDonorNodesForRawNode(rawNode) {
+  const count = donorCountForRawNode(rawNode);
+  if (!count) return [];
+
+  const modality = rawNode.detail?.Modality || "Raw data";
+  const source = rawNode.detail?.Source || "HPAP/PancDB";
+  const access = rawNode.detail?.Access || "DUA-HPAP-2024-001";
+  const lighthouseRoot = rawNode.detail?.Lighthouse || "";
+  const parentLabel = rawNode.label?.replace("\n", " ") || rawNode.id;
+
+  return Array.from({ length: count }, (_, i) => {
+    const donorId = donorIdForRawNode(rawNode, i);
+    return {
+      id: `${DONOR_NODE_PREFIX}${rawNode.id}_${String(i + 1).padStart(3, "0")}`,
+      label: `${donorId}\n${modality}`,
+      type: "RawData",
+      isDonor: true,
+      parentRawId: rawNode.id,
+      detail: {
+        Donor: donorId,
+        Modality: modality,
+        Source: source,
+        "Parent raw dataset": parentLabel,
+        Lighthouse: lighthouseRoot ? `${lighthouseRoot}${lighthouseRoot.endsWith("/") ? "" : "/"}donors/${donorId}/` : "N/A",
+        Access: access,
+      },
+    };
+  });
+}
 
 //  GRAPH MODES 
 const GRAPH_MODES = {
@@ -654,6 +703,27 @@ function GraphView({ graphMode, highlightLinked }) {
   const [size, setSize]         = useState({w:900,h:600});
   const [selected, setSelected] = useState(null);
   const [selEdge,  setSelEdge]  = useState(null);
+  const [expandedRawIds, setExpandedRawIds] = useState([]);
+
+  const { graphNodes, graphEdges } = useMemo(() => {
+    const visIds = new Set(GRAPH_MODES[graphMode].ids);
+    const baseNodes = NODES.filter(n => visIds.has(n.id)).map(n => ({ ...n }));
+    const baseEdges = EDGES.filter(e => visIds.has(e.source) && visIds.has(e.target)).map(e => ({ ...e }));
+
+    const donorNodes = [];
+    const donorEdges = [];
+    expandedRawIds.forEach(rawId => {
+      const rawNode = baseNodes.find(n => n.id === rawId && n.type === "RawData");
+      if (!rawNode) return;
+      const children = buildDonorNodesForRawNode(rawNode);
+      children.forEach(child => {
+        donorNodes.push(child);
+        donorEdges.push({ source: rawNode.id, target: child.id, label: "HAS_DONOR" });
+      });
+    });
+
+    return { graphNodes: [...baseNodes, ...donorNodes], graphEdges: [...baseEdges, ...donorEdges] };
+  }, [graphMode, expandedRawIds]);
 
   useEffect(()=>{
     if(!wrapRef.current) return;
@@ -661,16 +731,18 @@ function GraphView({ graphMode, highlightLinked }) {
     obs.observe(wrapRef.current); return()=>obs.disconnect();
   },[]);
 
-  useEffect(()=>{
+  useEffect(() => {
     setSelected(null);
     setSelEdge(null);
+    setExpandedRawIds([]);
+  }, [graphMode]);
+
+  useEffect(()=>{
     if(!svgRef.current) return;
     const{w,h}=size;
     const svg=d3.select(svgRef.current); svg.selectAll("*").remove();
-
-    const visIds=GRAPH_MODES[graphMode].ids;
-    const nodes=NODES.filter(n=>visIds.includes(n.id)).map(n=>({...n}));
-    const edges=EDGES.filter(e=>visIds.includes(e.source)&&visIds.includes(e.target)).map(e=>({...e}));
+    const nodes = graphNodes.map(n => ({ ...n }));
+    const edges = graphEdges.map(e => ({ ...e }));
 
     const defs=svg.append("defs");
     const pat=defs.append("pattern").attr("id","grid").attr("width",30).attr("height",30).attr("patternUnits","userSpaceOnUse");
@@ -704,30 +776,37 @@ function GraphView({ graphMode, highlightLinked }) {
 
     const nG=g.append("g").selectAll(".ng").data(nodes).enter().append("g").attr("class","ng").style("cursor","pointer")
       .call(d3.drag().on("start",(e,d)=>{if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;}).on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;}).on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}))
-      .on("click",(e,d)=>{e.stopPropagation();setSelected(prev=>prev?.id===d.id?null:d);setSelEdge(null);});
+      .on("click",(e,d)=>{
+        e.stopPropagation();
+        if (d.type === "RawData" && !d.isDonor && donorCountForRawNode(d) > 0) {
+          setExpandedRawIds(prev => prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]);
+        }
+        setSelected(prev=>prev?.id===d.id?null:d);
+        setSelEdge(null);
+      });
 
-    nG.append("rect").attr("x",-NW/2).attr("y",-NH/2).attr("width",NW).attr("height",NH).attr("rx",8)
+    nG.append("rect").attr("x",d=>-(d.isDonor?106:NW)/2).attr("y",d=>-(d.isDonor?42:NH)/2).attr("width",d=>d.isDonor?106:NW).attr("height",d=>d.isDonor?42:NH).attr("rx",8)
       .attr("fill",d=>TYPE[d.type].bg).attr("stroke",d=>TYPE[d.type].border).attr("stroke-width",1.8).attr("filter","url(#shadow)");
-    nG.append("rect").attr("x",-NW/2).attr("y",-NH/2).attr("width",NW).attr("height",5).attr("rx",8).attr("fill",d=>TYPE[d.type].border);
-    nG.append("rect").attr("x",-NW/2).attr("y",-NH/2+3).attr("width",NW).attr("height",2).attr("fill",d=>TYPE[d.type].border);
+    nG.append("rect").attr("x",d=>-(d.isDonor?106:NW)/2).attr("y",d=>-(d.isDonor?42:NH)/2).attr("width",d=>d.isDonor?106:NW).attr("height",d=>d.isDonor?4:5).attr("rx",8).attr("fill",d=>TYPE[d.type].border);
+    nG.append("rect").attr("x",d=>-(d.isDonor?106:NW)/2).attr("y",d=>-(d.isDonor?42:NH)/2+(d.isDonor?2:3)).attr("width",d=>d.isDonor?106:NW).attr("height",2).attr("fill",d=>TYPE[d.type].border);
     nG.append("text")
       .attr("text-anchor","middle")
-      .attr("y",-8)
-      .attr("font-size",13)
+      .attr("y",d=>d.isDonor?-4:-8)
+      .attr("font-size",d=>d.isDonor?10:13)
       .attr("font-family","Georgia, serif")
       .attr("pointer-events","none")
       .text(d=>TYPE[d.type].icon || "•");
     nG.each(function(d){
       const lines=d.label.split("\n");
-      const t=d3.select(this).append("text").attr("text-anchor","middle").attr("font-size",p?11:9).attr("font-weight","700").attr("font-family","Georgia,serif").attr("fill",TYPE[d.type].text).attr("pointer-events","none");
-      lines.forEach((l,i)=>t.append("tspan").attr("x",0).attr("dy",i===0?9:11).text(l));
+      const t=d3.select(this).append("text").attr("text-anchor","middle").attr("font-size",d.isDonor?(p?9:8):(p?11:9)).attr("font-weight","700").attr("font-family","Georgia,serif").attr("fill",TYPE[d.type].text).attr("pointer-events","none");
+      lines.forEach((l,i)=>t.append("tspan").attr("x",0).attr("dy",d.isDonor?(i===0?6:9):(i===0?9:11)).text(l));
     });
 
     const sim=d3.forceSimulation(nodes)
-      .force("link",d3.forceLink(edges).id(d=>d.id).distance(d=>["DOCUMENTED_BY","LINKED_TO","ENABLES"].includes(d.label)?110:200).strength(0.42))
+      .force("link",d3.forceLink(edges).id(d=>d.id).distance(d=>d.label==="HAS_DONOR"?52:["DOCUMENTED_BY","LINKED_TO","ENABLES"].includes(d.label)?110:200).strength(d=>d.label==="HAS_DONOR"?0.9:0.42))
       .force("charge",d3.forceManyBody().strength(-580))
       .force("center",d3.forceCenter(w/2,h/2))
-      .force("collision",d3.forceCollide(88));
+      .force("collision",d3.forceCollide(d=>d.isDonor?42:88));
 
     sim.on("tick",()=>{
       eG.select("line.hit").attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
@@ -738,7 +817,7 @@ function GraphView({ graphMode, highlightLinked }) {
     });
     svg.on("click",()=>{ setSelected(null); setSelEdge(null); });
     return()=>sim.stop();
-  },[size,graphMode,p]);
+  },[size,p,graphNodes,graphEdges]);
 
   // FIX: selection highlighting + LINKED_TO highlight mode
   useEffect(()=>{
@@ -749,7 +828,7 @@ function GraphView({ graphMode, highlightLinked }) {
     // LINKED_TO highlight: nodes involved in LINKED_TO edges
     const linkedNodeIds = new Set();
     if (highlightLinked) {
-      EDGES.filter(e=>e.label==="LINKED_TO").forEach(e=>{
+      graphEdges.filter(e=>e.label==="LINKED_TO").forEach(e=>{
         linkedNodeIds.add(edgeSrcId(e));
         linkedNodeIds.add(edgeTgtId(e));
       });
@@ -786,11 +865,11 @@ function GraphView({ graphMode, highlightLinked }) {
       if (highlightLinked && !anyActive && d.label==="LINKED_TO") return 0.95;
       return 0.55;
     });
-  },[selected, selEdge, highlightLinked]);
+  },[selected, selEdge, highlightLinked, graphEdges]);
 
-  const connEdges=selected?EDGES.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
-  const srcNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
-  const tgtNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
+  const connEdges=selected?graphEdges.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
+  const srcNode = selEdge ? graphNodes.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
+  const tgtNode = selEdge ? graphNodes.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
 
   return (
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
@@ -855,7 +934,7 @@ function GraphView({ graphMode, highlightLinked }) {
                     const tgtId = edgeTgtId(e);
                     const oid=srcId===selected.id?tgtId:srcId;
                     const dir = srcId===selected.id ? "->" : "<-";
-                    const other=NODES.find(n=>n.id===oid);
+                    const other=graphNodes.find(n=>n.id===oid);
                     const ec=EDGE_STYLE[e.label]?.color||"#aaa";
                     return(
                       <div key={i} onClick={()=>setSelected(other)} style={{ display:"flex", alignItems:"center", gap:6, background:"#f8fafc", border:`1px solid ${ec}44`, borderRadius:5, padding:"5px 8px", cursor:"pointer" }}>
@@ -877,7 +956,7 @@ function GraphView({ graphMode, highlightLinked }) {
             <div style={{ marginTop:12, padding:"10px 14px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontSize:p?12:10, color:"#374151", lineHeight:1.8, textAlign:"left", fontFamily:"Georgia,serif" }}>
               <strong>Showing</strong><br/>
               {GRAPH_MODES[graphMode].label}<br/>
-              <span style={{ fontFamily:"monospace", fontSize:p?11.5:9.5 }}>{GRAPH_MODES[graphMode].ids.length} nodes visible</span>
+              <span style={{ fontFamily:"monospace", fontSize:p?11.5:9.5 }}>{graphNodes.length} nodes visible</span>
             </div>
           </div>
         )}
@@ -1453,6 +1532,7 @@ export default function App() {
     </PresentationCtx.Provider>
   );
 }
+
 
 
 
