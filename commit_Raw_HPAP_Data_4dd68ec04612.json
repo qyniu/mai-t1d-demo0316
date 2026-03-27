@@ -1,0 +1,33 @@
+{
+    "node_id": "4dd68ec04612",
+    "parent_ids": [
+        "ROOT"
+    ],
+    "parent_id": "ROOT",
+    "edge_label": null,
+    "node_type": "RawData",
+    "known_node_id": null,
+    "phase": "Prepare",
+    "category": "Raw HPAP Data",
+    "governance_status": "HEALTHY",
+    "metadata": {
+        "author": "Qingyuan",
+        "timestamp": "2026-03-27T12:56:13.833651",
+        "file_path": "C:\\Users\\DELL\\Documents\\umich\\MAI-T1D\\March\\demo\\demofile.csv",
+        "properties": {},
+        "data_profiling": {
+            "shape": "54x761",
+            "cols": [
+                "name",
+                "203294",
+                "203394",
+                "203894",
+                "203994",
+                "204202",
+                "204878",
+                "205968"
+            ]
+        },
+        "edge_train_metadata": []
+    }
+}
