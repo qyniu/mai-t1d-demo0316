@@ -35,9 +35,9 @@ const NODES = [
   { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
     detail:{ "Donor":"HPAP-002", "Modality":"scRNA-seq", "Source":"HPAP / PancDB", "Platform":"10x Genomics Chromium v3", "Lighthouse":"/lighthouse/mai-t1d/raw/scrna/hpap002/", "Portal":"hpap.pmacs.upenn.edu", "Access":"DUA-HPAP-2024-001", "Responsible":"HPAP Consortium / UPenn", "Checksum":"sha256:a1b2c3..." }},
   { id:"raw_atac",   label:"HPAP cohort\nscATAC-seq",     type:"RawData",
-    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001" }},
+    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001", "Connections":"USED scATAC QC Pipeline v2.0" }},
   { id:"raw_wgs",    label:"HPAP cohort\nWGS",            type:"RawData",
-    detail:{ "Modality":"WGS", "Donors":"194 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/wgs/", "Access":"DUA-HPAP-2024-001" }},
+    detail:{ "Modality":"WGS", "Donors":"194 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/wgs/", "Access":"DUA-HPAP-2024-001", "Connections":"USED WGS Variant Calling v1.2" }},
 
   { id:"qc_scrna",   label:"scRNA QC\nPipeline v3.1",     type:"Pipeline",
     detail:{ "Version":"v3.1", "Tool":"Scanpy 1.9 + DoubletFinder", "Min genes/cell":"200", "Max mito %":"< 20%", "Batch correction":"Harmony", "Script Hash":"sha256:1c2d3e...", "GitHub":"github.com/mai-t1d/pipelines/qc-scrna", "Run Date":"2025-10-14", "SLURM Job":"12345678", "Executor":"Kai Liu", "Institution":"University of Michigan" }},

@@ -3,19 +3,46 @@ import os
 import json
 import hashlib
 import glob
+import subprocess
+import urllib.request
 from datetime import datetime
 
 # --- Configuration ---
 CONFIG_PATH = os.path.expanduser("~/.bio_config")
+VERCEL_DEPLOY_HOOK = "https://api.vercel.com/v1/integrations/deploy/prj_gJKrKHUXKOrNHulXIpGNU9m3jcrP/LzM2podhRu"
+
+def git_auto_commit(file_path: str, message: str):
+    """Stage a file, commit, and push to origin in the repo containing it."""
+    repo_dir = os.path.dirname(os.path.abspath(file_path))
+    try:
+        subprocess.run(
+            ["git", "add", os.path.abspath(file_path)],
+            cwd=repo_dir, check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=repo_dir, check=True, capture_output=True
+        )
+        print(f"   📌 Auto-committed: {os.path.basename(file_path)}")
+        subprocess.run(
+            ["git", "push", "origin", "HEAD:dev"],
+            cwd=repo_dir, check=True, capture_output=True
+        )
+        print(f"   🚀 Auto-pushed to dev: {os.path.basename(file_path)}")
+        urllib.request.urlopen(urllib.request.Request(VERCEL_DEPLOY_HOOK, method="GET"))
+        print(f"   🌐 Vercel redeploy triggered")
+    except subprocess.CalledProcessError as e:
+        print(f"   ⚠️  Git auto-commit/push failed: {e.stderr.decode().strip()}")
+    except Exception as e:
+        print(f"   ⚠️  Vercel deploy hook failed: {e}")
 
 # --- Expanded Schema (Aligned with provided Images) ---
 PHASE_SCHEMA = {
     "1": {
         "name": "Prepare",
         "categories": {
-            "Raw HPAP Data": [
-                "Institution", "Lab", "Portal_Owner", "Data_Modality",
-                "Donors", "Cell_Type", "Tissue", "Platform", "Access"
+            "Raw BioBank Data": [
+                "Modality", "Donors", "Source", "Lighthouse", "Access", "Connections"
             ],
             "QC & Filtering": [
                 "Responsible_Person", "Pipeline_Path", "Doublet_Removal",
@@ -80,7 +107,7 @@ PHASE_SCHEMA = {
 
 # --- KG Node Type Mapping ---
 CATEGORY_TO_NODE_TYPE = {
-    "Raw HPAP Data":                "RawData",
+    "Raw BioBank Data":             "RawData",
     "QC & Filtering":               "Pipeline",
     "Metadata Alignment":           "ProcessedData",
     "AI-Ready Data Construction":   "ProcessedData",
@@ -93,7 +120,7 @@ CATEGORY_TO_NODE_TYPE = {
 
 # --- KG Edge Label Mapping ---
 CATEGORY_TO_EDGE = {
-    "Raw HPAP Data":                None,
+    "Raw BioBank Data":             None,
     "QC & Filtering":               "USED",
     "Metadata Alignment":           "WAS_GENERATED_BY",
     "AI-Ready Data Construction":   "WAS_GENERATED_BY",
@@ -106,9 +133,9 @@ CATEGORY_TO_EDGE = {
 
 # --- Known KG Nodes (from kg_demo_v9.jsx) ---
 KNOWN_NODES = {
-    "raw_scrna":     {"label": "HPAP-002 scRNA-seq",          "type": "RawData",        "detail": {"Donor": "HPAP-002", "Data_Modality": "scRNA-seq", "Portal_Owner": "HPAP / PancDB", "Platform": "10x Genomics Chromium v3", "Lighthouse": "/lighthouse/mai-t1d/raw/scrna/hpap002/", "Access": "DUA-HPAP-2024-001", "Institution": "HPAP Consortium / UPenn"}},
-    "raw_atac":      {"label": "HPAP cohort scATAC-seq",      "type": "RawData",        "detail": {"Data_Modality": "scATAC-seq", "Donors": "8 donors", "Portal_Owner": "HPAP/PancDB", "Lighthouse": "/lighthouse/mai-t1d/raw/atac/", "Access": "DUA-HPAP-2024-001"}},
-    "raw_wgs":       {"label": "HPAP cohort WGS",             "type": "RawData",        "detail": {"Data_Modality": "WGS", "Donors": "194 donors", "Portal_Owner": "HPAP/PancDB", "Lighthouse": "/lighthouse/mai-t1d/raw/wgs/", "Access": "DUA-HPAP-2024-001"}},
+    "raw_scrna":     {"label": "HPAP-002 scRNA-seq",          "type": "RawData",        "detail": {"Modality": "scRNA-seq",  "Donors": "HPAP-002",    "Source": "HPAP / PancDB",  "Lighthouse": "/lighthouse/mai-t1d/raw/scrna/hpap002/", "Access": "DUA-HPAP-2024-001", "Connections": "USED scRNA QC Pipeline v3.1"}},
+    "raw_atac":      {"label": "HPAP cohort scATAC-seq",      "type": "RawData",        "detail": {"Modality": "scATAC-seq", "Donors": "8 donors",    "Source": "HPAP/PancDB",    "Lighthouse": "/lighthouse/mai-t1d/raw/atac/",           "Access": "DUA-HPAP-2024-001", "Connections": "USED scATAC QC Pipeline v2.0"}},
+    "raw_wgs":       {"label": "HPAP cohort WGS",             "type": "RawData",        "detail": {"Modality": "WGS",       "Donors": "194 donors",  "Source": "HPAP/PancDB",    "Lighthouse": "/lighthouse/mai-t1d/raw/wgs/",            "Access": "DUA-HPAP-2024-001", "Connections": "USED WGS Variant Calling v1.2"}},
     "qc_scrna":      {"label": "scRNA QC Pipeline v3.1",      "type": "Pipeline",       "detail": {"Version": "v3.1", "Pipeline_Path": "github.com/mai-t1d/pipelines/qc-scrna", "Doublet_Removal": "DoubletFinder", "Min_Genes_Cell": "200", "Max_Mitochondrial_Pct": "20%", "Integration_Method": "Harmony", "Responsible_Person": "Kai Liu", "Institution": "University of Michigan"}},
     "qc_atac":       {"label": "scATAC QC Pipeline v2.0",     "type": "Pipeline",       "detail": {"Version": "v2.0", "Pipeline_Path": "github.com/mai-t1d/pipelines/qc-atac", "Responsible_Person": "Kai Liu", "Institution": "University of Michigan"}},
     "qc_wgs":        {"label": "WGS Variant Calling v1.2",    "type": "Pipeline",       "detail": {"Version": "v1.2", "Pipeline_Path": "github.com/mai-t1d/pipelines/wgs-varcall", "Responsible_Person": "Diane Saunders", "Institution": "Vanderbilt University"}},
@@ -253,6 +280,12 @@ def flag_node(node_id, status, reason):
                 })
                 with open(json_file, "w") as f:
                     json.dump(node, f, indent=4)
+                flag_msg = (
+                    f"[auto] flag node {node_id[:8]} | "
+                    f"status={status} | "
+                    f"ts={datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}"
+                )
+                git_auto_commit(json_file, flag_msg)
                 return True
         except Exception:
             continue
@@ -577,6 +610,13 @@ def run_bio_cli():
         with open(save_name, "w") as f:
             json.dump(node, f, indent=4)
         print(f"\n✅ Success: Node {child_id} saved to {save_name}.")
+        commit_msg = (
+            f"[auto] commit node {child_id[:8]} | "
+            f"cat={selected_cat} | "
+            f"author={config['user']} | "
+            f"ts={datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}"
+        )
+        git_auto_commit(save_name, commit_msg)
 
     elif choice == '2':
         view_lineage_log()
