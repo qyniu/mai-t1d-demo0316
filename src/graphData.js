@@ -75,6 +75,8 @@ export const NODES = [
     detail:{ "Task":"Regression / association", "Model":"Genomic FM v1", "Description":"Predict eQTLs across islet cell types", "Status":"Active" }},
   { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
     detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
+  { id:"1ea9c376", label:"Raw BioBank Data", type:"RawData",
+    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001", "Connections":"USED scATAC QC Pipeline v2.0" }},
 ];
 
 export const EDGES = [

@@ -1,0 +1,40 @@
+{
+    "node_id": "1ea9c376a0ae",
+    "parent_ids": [
+        "ROOT"
+    ],
+    "parent_id": "ROOT",
+    "edge_label": null,
+    "node_type": "RawData",
+    "known_node_id": null,
+    "phase": "Prepare",
+    "category": "Raw BioBank Data",
+    "governance_status": "HEALTHY",
+    "metadata": {
+        "author": "Qingyuan",
+        "timestamp": "2026-03-27T13:55:59.821326",
+        "file_path": "C:\\Users\\DELL\\Documents\\umich\\MAI-T1D\\March\\demo\\raw_atac_sample.csv",
+        "properties": {
+            "Modality": "scATAC-seq",
+            "Donors": "8 donors",
+            "Source": "HPAP/PancDB",
+            "Lighthouse": "/lighthouse/mai-t1d/raw/atac/",
+            "Access": "DUA-HPAP-2024-001",
+            "Connections": "USED scATAC QC Pipeline v2.0"
+        },
+        "data_profiling": {
+            "shape": "8x12",
+            "cols": [
+                "donor_id",
+                "tissue",
+                "modality",
+                "platform",
+                "cell_count",
+                "peaks_called",
+                "tss_enrichment",
+                "frip_score"
+            ]
+        },
+        "edge_train_metadata": []
+    }
+}
