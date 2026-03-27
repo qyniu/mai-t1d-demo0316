@@ -11,12 +11,15 @@ from datetime import datetime
 CONFIG_PATH = os.path.expanduser("~/.bio_config")
 VERCEL_DEPLOY_HOOK = "https://api.vercel.com/v1/integrations/deploy/prj_gJKrKHUXKOrNHulXIpGNU9m3jcrP/LzM2podhRu"
 
-def git_auto_commit(file_path: str, message: str):
-    """Stage a file, commit, and push to origin in the repo containing it."""
+def git_auto_commit(file_path: str, message: str, extra_files: list = None):
+    """Stage files, commit, push to dev, and trigger Vercel redeploy."""
     repo_dir = os.path.dirname(os.path.abspath(file_path))
     try:
+        files_to_add = [os.path.abspath(file_path)]
+        if extra_files:
+            files_to_add.extend(extra_files)
         subprocess.run(
-            ["git", "add", os.path.abspath(file_path)],
+            ["git", "add"] + files_to_add,
             cwd=repo_dir, check=True, capture_output=True
         )
         subprocess.run(
@@ -35,6 +38,107 @@ def git_auto_commit(file_path: str, message: str):
         print(f"   ⚠️  Git auto-commit/push failed: {e.stderr.decode().strip()}")
     except Exception as e:
         print(f"   ⚠️  Vercel deploy hook failed: {e}")
+
+
+def inject_into_graphdata(node: dict, script_dir: str):
+    """
+    Update src/graphData.js with the committed node so the Vercel website
+    reflects the new data after each push.
+    - If the node already exists (by id), its detail block is updated.
+    - If the node is new, it is appended to the NODES array.
+    - The corresponding edge is added to EDGES if not already present.
+    Returns the absolute path to graphData.js, or None on failure.
+    """
+    graphdata_path = os.path.join(script_dir, "src", "graphData.js")
+    if not os.path.exists(graphdata_path):
+        print("   ⚠️  src/graphData.js not found — skipping website update.")
+        return None
+
+    with open(graphdata_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # --- Resolve node id and label ---
+    node_id   = node.get("known_node_id") or node["node_id"][:8]
+    node_type = node["node_type"]
+    props     = {k: v for k, v in node["metadata"]["properties"].items()
+                 if not k.startswith("_")}
+
+    if node.get("known_node_id") and node["known_node_id"] in KNOWN_NODES:
+        raw_label = KNOWN_NODES[node["known_node_id"]]["label"]
+        # Split into two display lines the same way existing nodes are formatted
+        parts = raw_label.split(" ", 1)
+        label = parts[0] + ("\\n" + parts[1] if len(parts) > 1 else "")
+    else:
+        label = node.get("category", "Unknown Node")
+
+    detail_str = ", ".join(f'"{k}":"{str(v)}"' for k, v in props.items())
+    node_entry = (
+        f'  {{ id:"{node_id}", label:"{label}", type:"{node_type}",\n'
+        f'    detail:{{ {detail_str} }}}},\n'
+    )
+
+    # --- Insert or update node in NODES array ---
+    if f'id:"{node_id}"' in content:
+        # Update: replace the existing node entry by counting braces
+        idx        = content.find(f'id:"{node_id}"')
+        node_start = content.rfind("  {", 0, idx)
+        brace, i   = 0, node_start
+        while i < len(content):
+            if content[i] == "{":
+                brace += 1
+            elif content[i] == "}":
+                brace -= 1
+                if brace == 0:
+                    node_end = i + 1
+                    if content[node_end: node_end + 2] == ",\n":
+                        node_end += 2
+                    elif content[node_end: node_end + 1] == "\n":
+                        node_end += 1
+                    break
+            i += 1
+        content = content[:node_start] + node_entry + content[node_end:]
+        print(f"   🔄 Updated node '{node_id}' in graphData.js")
+    else:
+        # Append: insert before the closing ]; of NODES
+        marker = "];\n\nexport const EDGES"
+        pos    = content.find(marker)
+        if pos == -1:
+            print("   ⚠️  Could not locate NODES array end in graphData.js")
+            return None
+        content = content[:pos] + node_entry + content[pos:]
+        print(f"   ➕ Added node '{node_id}' to graphData.js")
+
+    # --- Insert edge into EDGES array if applicable ---
+    edge_label  = node.get("edge_label")
+    parent_ids  = node.get("parent_ids", ["ROOT"])
+
+    if edge_label:
+        for pid in parent_ids:
+            if pid == "ROOT":
+                continue
+            # Look up the parent's known_node_id from existing commits
+            source_id = pid[:8]
+            for jf in glob.glob(os.path.join(script_dir, "commit_*.json")):
+                try:
+                    with open(jf) as f:
+                        pn = json.load(f)
+                    if pn.get("node_id") == pid and pn.get("known_node_id"):
+                        source_id = pn["known_node_id"]
+                        break
+                except Exception:
+                    continue
+
+            edge_check = f'source:"{source_id}", target:"{node_id}"'
+            if edge_check not in content:
+                edge_entry  = f'  {{ source:"{source_id}", target:"{node_id}", label:"{edge_label}" }},\n'
+                last_bracket = content.rfind("];")
+                content      = content[:last_bracket] + edge_entry + content[last_bracket:]
+                print(f"   ➕ Added edge {source_id} →[{edge_label}]→ {node_id} to graphData.js")
+
+    with open(graphdata_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return graphdata_path
 
 # --- Expanded Schema (Aligned with provided Images) ---
 PHASE_SCHEMA = {
@@ -610,13 +714,14 @@ def run_bio_cli():
         with open(save_name, "w") as f:
             json.dump(node, f, indent=4)
         print(f"\n✅ Success: Node {child_id} saved to {save_name}.")
+        graphdata_path = inject_into_graphdata(node, script_dir)
         commit_msg = (
             f"[auto] commit node {child_id[:8]} | "
             f"cat={selected_cat} | "
             f"author={config['user']} | "
             f"ts={datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}"
         )
-        git_auto_commit(save_name, commit_msg)
+        git_auto_commit(save_name, commit_msg, extra_files=[graphdata_path] if graphdata_path else None)
 
     elif choice == '2':
         view_lineage_log()
