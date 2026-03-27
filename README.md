@@ -28,10 +28,10 @@ pip install pandas
 ### Run
 
 ```bash
-python mai_t1d0325.py
+python Auto-profiling_demo.py
 ```
 
-On first run, you will be prompted to set your name and lab ID. This is saved to `~/.bio_config` and reused in all future sessions.
+On first run, you will be prompted to set your name, lab ID, and ORCID. This is saved to `~/.bio_config` and reused in all future sessions.
 
 ---
 
@@ -78,7 +78,7 @@ Each phase contains one or more categories with specific metadata fields:
 
 | Phase | Category | Edge label | Node type |
 |-------|----------|-----------|-----------|
-| Prepare | Raw HPAP Data | _(source)_ | RawData |
+| Prepare | Raw BioBank Data | _(source)_ | RawData |
 | Prepare | QC & Filtering | USED | Pipeline |
 | Prepare | Metadata Alignment | WAS_GENERATED_BY | ProcessedData |
 | Prepare | AI-Ready Data Construction | WAS_GENERATED_BY | ProcessedData |
@@ -196,7 +196,8 @@ Update your display name or lab ID without leaving the program:
 ✏️  EDIT PROFILE  (press Enter to keep current value)
    > Name [Qingyuan Niu]: Jane Smith
    > Lab ID [UMICH-MAI]:
-   ✅ Profile updated — Name: Jane Smith | Lab: UMICH-MAI
+   > ORCID [0000-0001-2345-6789]:
+   ✅ Profile updated — Name: Jane Smith | Lab: UMICH-MAI | ORCID: 0000-0001-2345-6789
 ```
 
 Profile is stored at `~/.bio_config` (e.g., `C:\Users\<you>\.bio_config` on Windows).
@@ -249,7 +250,7 @@ The following 20 nodes are pre-registered from the MAI-T1D knowledge graph and c
 
 ```
 demo/
-├── mai_t1d0325.py              # Main CLI
+├── Auto-profiling_demo.py      # Main CLI
 ├── README.md                   # This file
 ├── EXPANSION_PLAN.md           # Implementation plan (KG → CLI expansion)
 ├── ~/.bio_config               # User profile (name, lab ID) — outside repo
