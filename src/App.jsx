@@ -1403,7 +1403,6 @@ export default function App() {
   const MODES = [
     { id:"full",   label:"🕸️ Provenance Graph" },
     { id:"impact", label:"⚡ Impact Analysis" },
-    { id:"log",    label:"📝 Provenance Log Entry" },
     { id:"agent",  label:"🤖 Governance Agent" },
     { id:"log",    label:"📝 Provenance Log Entry" },
   ];
