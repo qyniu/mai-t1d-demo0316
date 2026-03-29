@@ -119,6 +119,8 @@ const MODALITIES   = ["scRNA-seq","scATAC-seq","WGS","Spatial (CODEX)","Spatial 
 //  PRESENTATION MODE CONTEXT 
 const PresentationCtx = React.createContext(false);
 const usePres = () => React.useContext(PresentationCtx);
+const GraphDataCtx = React.createContext(null);
+const useGraphData = () => React.useContext(GraphDataCtx);
 
 // scaled font helper: returns base size + offset in presentation mode
 function fs(base, presOffset = 2) {
@@ -158,6 +160,7 @@ function CompactLegend() {
 //  PROVENANCE LOG VIEW 
 function ProvLogView() {
   const p = usePres();
+  const { addNode, addEdge, updateNode } = useGraphData();
   const [nodeType,    setNodeType]    = useState(null);
   const [instanceId,  setInstanceId]  = useState("");
   const [taskOp,      setTaskOp]      = useState("update");
@@ -479,7 +482,40 @@ function ProvLogView() {
           )}
 
           <button disabled={!canSubmit}
-            onClick={()=>{ if(canSubmit){ setLogId("log_"+Date.now().toString(36).toUpperCase()); setSubmitted(true); }}}
+            onClick={()=>{
+              if(canSubmit){
+                const lid = "log_"+Date.now().toString(36).toUpperCase();
+                setLogId(lid);
+                if (isAdding) {
+                  addNode({
+                    id: fields.task_id,
+                    label: `${fields.task_name}\n${fields.task_type||"Task"}`,
+                    type: "DownstreamTask",
+                    detail: {
+                      ...(fields.task_type ? {"Task": fields.task_type} : {}),
+                      "Model": fields.model_id,
+                      "Description": fields.description,
+                      "Status": fields.status || "In development",
+                      "Institution": fields.institution || institution,
+                      ...(fields.eu_ai_act ? {"EU AI Act": fields.eu_ai_act} : {}),
+                      "Executor": executor,
+                      ...(email ? {"Email": email} : {}),
+                      "Log ID": lid,
+                    }
+                  });
+                  addEdge({ source: fields.model_id, target: fields.task_id, label: "ENABLES" });
+                } else if (instanceId) {
+                  const patch = {};
+                  if (executor) patch["Executor"] = executor;
+                  if (email) patch["Email"] = email;
+                  if (institution) patch["Institution"] = institution;
+                  if (activeFields) activeFields.forEach(f => { if (fields[f.key]) patch[f.label.replace(" *","")] = fields[f.key]; });
+                  patch["Log ID"] = lid;
+                  updateNode(instanceId, patch);
+                }
+                setSubmitted(true);
+              }
+            }}
             style={{ width:"100%", padding:"11px", borderRadius:8, border:"none", cursor:canSubmit?"pointer":"not-allowed", background:canSubmit?"#0f172a":"#cbd5e1", color:"#fff", fontSize:p?14:12, fontWeight:700, fontFamily:"Georgia,serif", transition:"background 0.2s", opacity:canSubmit?1:0.55 }}>
             Submit provenance log ?          </button>
           <div style={{ textAlign:"center", marginTop:8, fontSize:p?11:9.5, color:"#94a3b8", fontStyle:"italic", fontFamily:"Georgia,serif" }}>
@@ -698,6 +734,7 @@ function ImpactView() {
 const NW=140, NH=58;
 function GraphView({ graphMode, highlightLinked }) {
   const p = usePres();
+  const { nodes: ctxNodes, edges: ctxEdges } = useGraphData();
   const svgRef  = useRef(null);
   const wrapRef = useRef(null);
   const [size, setSize]         = useState({w:900,h:600});
@@ -706,9 +743,9 @@ function GraphView({ graphMode, highlightLinked }) {
   const [expandedRawIds, setExpandedRawIds] = useState([]);
 
   const { graphNodes, graphEdges } = useMemo(() => {
-    const visIds = new Set(GRAPH_MODES[graphMode].ids);
-    const baseNodes = NODES.filter(n => visIds.has(n.id)).map(n => ({ ...n }));
-    const baseEdges = EDGES.filter(e => visIds.has(e.source) && visIds.has(e.target)).map(e => ({ ...e }));
+    const visIds = new Set(graphMode==="full" ? ctxNodes.map(n=>n.id) : GRAPH_MODES[graphMode].ids);
+    const baseNodes = ctxNodes.filter(n => visIds.has(n.id)).map(n => ({ ...n }));
+    const baseEdges = ctxEdges.filter(e => visIds.has(e.source) && visIds.has(e.target)).map(e => ({ ...e }));
 
     const donorNodes = [];
     const donorEdges = [];
@@ -817,7 +854,7 @@ function GraphView({ graphMode, highlightLinked }) {
     });
     svg.on("click",()=>{ setSelected(null); setSelEdge(null); });
     return()=>sim.stop();
-  },[size,p,graphNodes,graphEdges]);
+  },[size,p,graphMode,ctxNodes,ctxEdges]);
 
   // FIX: selection highlighting + LINKED_TO highlight mode
   useEffect(()=>{
@@ -828,7 +865,7 @@ function GraphView({ graphMode, highlightLinked }) {
     // LINKED_TO highlight: nodes involved in LINKED_TO edges
     const linkedNodeIds = new Set();
     if (highlightLinked) {
-      graphEdges.filter(e=>e.label==="LINKED_TO").forEach(e=>{
+      ctxEdges.filter(e=>e.label==="LINKED_TO").forEach(e=>{
         linkedNodeIds.add(edgeSrcId(e));
         linkedNodeIds.add(edgeTgtId(e));
       });
@@ -867,9 +904,9 @@ function GraphView({ graphMode, highlightLinked }) {
     });
   },[selected, selEdge, highlightLinked, graphEdges]);
 
-  const connEdges=selected?graphEdges.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
-  const srcNode = selEdge ? graphNodes.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
-  const tgtNode = selEdge ? graphNodes.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
+  const connEdges=selected?ctxEdges.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
+  const srcNode = selEdge ? ctxNodes.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
+  const tgtNode = selEdge ? ctxNodes.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
 
   return (
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
@@ -1399,6 +1436,11 @@ export default function App() {
   const [graphMode,      setGraphMode]      = useState("full");
   const [presMode,       setPresMode]       = useState(false);  // FIX #6: presentation mode
   const [highlightLinked,setHighlightLinked] = useState(false); // FIX #8: LINKED_TO highlight
+  const [graphNodes,     setGraphNodes]     = useState(NODES);
+  const [graphEdges,     setGraphEdges]     = useState(EDGES);
+  const addGraphNode  = useCallback(node => setGraphNodes(ns => [...ns, node]), []);
+  const addGraphEdge  = useCallback(edge => setGraphEdges(es => [...es, edge]), []);
+  const updateGraphNode = useCallback((id, patch) => setGraphNodes(ns => ns.map(n => n.id===id ? {...n, detail:{...n.detail,...patch}} : n)), []);
 
   const MODES = [
     { id:"full",   label:"🕸️ Provenance Graph" },
@@ -1417,6 +1459,7 @@ export default function App() {
   const p = presMode;
 
   return (
+    <GraphDataCtx.Provider value={{nodes:graphNodes,edges:graphEdges,addNode:addGraphNode,addEdge:addGraphEdge,updateNode:updateGraphNode}}>
     <PresentationCtx.Provider value={presMode}>
     <div style={{ display:"flex", height:"100vh", background:"#f1f5f9", fontFamily:"Georgia,'Times New Roman',serif", color:"#1e293b", overflow:"hidden" }}>
 
@@ -1530,6 +1573,7 @@ export default function App() {
       </div>
     </div>
     </PresentationCtx.Provider>
+    </GraphDataCtx.Provider>
   );
 }
 
