@@ -1405,6 +1405,7 @@ export default function App() {
     { id:"impact", label:"⚡ Impact Analysis" },
     { id:"log",    label:"📝 Provenance Log Entry" },
     { id:"agent",  label:"🤖 Governance Agent" },
+    { id:"log",    label:"📝 Provenance Log Entry" },
   ];
 
   const GMODES = [
