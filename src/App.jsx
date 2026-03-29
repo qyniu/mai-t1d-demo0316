@@ -177,6 +177,8 @@ const MODALITIES   = ["scRNA-seq","scATAC-seq","WGS","Spatial (CODEX)","Spatial 
 //  PRESENTATION MODE CONTEXT 
 const PresentationCtx = React.createContext(false);
 const usePres = () => React.useContext(PresentationCtx);
+const GraphDataCtx = React.createContext(null);
+const useGraphData = () => React.useContext(GraphDataCtx);
 
 // scaled font helper: returns base size + offset in presentation mode
 function fs(base, presOffset = 2) {
@@ -216,6 +218,7 @@ function CompactLegend() {
 //  PROVENANCE LOG VIEW 
 function ProvLogView() {
   const p = usePres();
+  const { addNode, addEdge, updateNode, nodes: ctxNodes } = useGraphData();
   const [nodeType,    setNodeType]    = useState(null);
   const [instanceId,  setInstanceId]  = useState("");
   const [taskOp,      setTaskOp]      = useState("update");
@@ -537,7 +540,40 @@ function ProvLogView() {
           )}
 
           <button disabled={!canSubmit}
-            onClick={()=>{ if(canSubmit){ setLogId("log_"+Date.now().toString(36).toUpperCase()); setSubmitted(true); }}}
+            onClick={()=>{
+              if(canSubmit){
+                const lid = "log_"+Date.now().toString(36).toUpperCase();
+                setLogId(lid);
+                if (isAdding) {
+                  addNode({
+                    id: fields.task_id,
+                    label: `${fields.task_name}\n${fields.task_type||"Task"}`,
+                    type: "DownstreamTask",
+                    detail: {
+                      ...(fields.task_type ? {"Task": fields.task_type} : {}),
+                      "Model": fields.model_id,
+                      "Description": fields.description,
+                      "Status": fields.status || "In development",
+                      "Institution": fields.institution || institution,
+                      ...(fields.eu_ai_act ? {"EU AI Act": fields.eu_ai_act} : {}),
+                      "Executor": executor,
+                      ...(email ? {"Email": email} : {}),
+                      "Log ID": lid,
+                    }
+                  });
+                  addEdge({ source: fields.model_id, target: fields.task_id, label: "ENABLES" });
+                } else if (instanceId) {
+                  const patch = {};
+                  if (executor) patch["Executor"] = executor;
+                  if (email) patch["Email"] = email;
+                  if (institution) patch["Institution"] = institution;
+                  if (activeFields) activeFields.forEach(f => { if (fields[f.key]) patch[f.label.replace(" *","")] = fields[f.key]; });
+                  patch["Log ID"] = lid;
+                  updateNode(instanceId, patch);
+                }
+                setSubmitted(true);
+              }
+            }}
             style={{ width:"100%", padding:"11px", borderRadius:8, border:"none", cursor:canSubmit?"pointer":"not-allowed", background:canSubmit?"#0f172a":"#cbd5e1", color:"#fff", fontSize:p?14:12, fontWeight:700, fontFamily:"Georgia,serif", transition:"background 0.2s", opacity:canSubmit?1:0.55 }}>
             Submit provenance log ?          </button>
           <div style={{ textAlign:"center", marginTop:8, fontSize:p?11:9.5, color:"#94a3b8", fontStyle:"italic", fontFamily:"Georgia,serif" }}>
@@ -756,6 +792,7 @@ function ImpactView() {
 const NW=140, NH=58;
 function GraphView({ graphMode, highlightLinked }) {
   const p = usePres();
+  const { nodes: ctxNodes, edges: ctxEdges } = useGraphData();
   const svgRef  = useRef(null);
   const wrapRef = useRef(null);
   const [size, setSize]         = useState({w:900,h:600});
@@ -775,9 +812,9 @@ function GraphView({ graphMode, highlightLinked }) {
     const{w,h}=size;
     const svg=d3.select(svgRef.current); svg.selectAll("*").remove();
 
-    const visIds=GRAPH_MODES[graphMode].ids;
-    const nodes=NODES.filter(n=>visIds.includes(n.id)).map(n=>({...n}));
-    const edges=EDGES.filter(e=>visIds.includes(e.source)&&visIds.includes(e.target)).map(e=>({...e}));
+    const visIds=graphMode==="full" ? ctxNodes.map(n=>n.id) : GRAPH_MODES[graphMode].ids;
+    const nodes=ctxNodes.filter(n=>visIds.includes(n.id)).map(n=>({...n}));
+    const edges=ctxEdges.filter(e=>visIds.includes(e.source)&&visIds.includes(e.target)).map(e=>({...e}));
 
     const defs=svg.append("defs");
     const pat=defs.append("pattern").attr("id","grid").attr("width",30).attr("height",30).attr("patternUnits","userSpaceOnUse");
@@ -839,7 +876,7 @@ function GraphView({ graphMode, highlightLinked }) {
     });
     svg.on("click",()=>{ setSelected(null); setSelEdge(null); });
     return()=>sim.stop();
-  },[size,graphMode,p]);
+  },[size,graphMode,p,ctxNodes,ctxEdges]);
 
   // FIX: selection highlighting + LINKED_TO highlight mode
   useEffect(()=>{
@@ -850,7 +887,7 @@ function GraphView({ graphMode, highlightLinked }) {
     // LINKED_TO highlight: nodes involved in LINKED_TO edges
     const linkedNodeIds = new Set();
     if (highlightLinked) {
-      EDGES.filter(e=>e.label==="LINKED_TO").forEach(e=>{
+      ctxEdges.filter(e=>e.label==="LINKED_TO").forEach(e=>{
         linkedNodeIds.add(edgeSrcId(e));
         linkedNodeIds.add(edgeTgtId(e));
       });
@@ -889,9 +926,9 @@ function GraphView({ graphMode, highlightLinked }) {
     });
   },[selected, selEdge, highlightLinked]);
 
-  const connEdges=selected?EDGES.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
-  const srcNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
-  const tgtNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
+  const connEdges=selected?ctxEdges.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
+  const srcNode = selEdge ? ctxNodes.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
+  const tgtNode = selEdge ? ctxNodes.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
 
   return (
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
@@ -1421,11 +1458,16 @@ export default function App() {
   const [graphMode,      setGraphMode]      = useState("full");
   const [presMode,       setPresMode]       = useState(false);  // FIX #6: presentation mode
   const [highlightLinked,setHighlightLinked] = useState(false); // FIX #8: LINKED_TO highlight
+  const [graphNodes,     setGraphNodes]     = useState(NODES);
+  const [graphEdges,     setGraphEdges]     = useState(EDGES);
+  const addGraphNode  = useCallback(node => setGraphNodes(ns => [...ns, node]), []);
+  const addGraphEdge  = useCallback(edge => setGraphEdges(es => [...es, edge]), []);
+  const updateGraphNode = useCallback((id, patch) => setGraphNodes(ns => ns.map(n => n.id===id ? {...n, detail:{...n.detail,...patch}} : n)), []);
 
   const MODES = [
     { id:"full",   label:"🕸️ Provenance Graph" },
-    { id:"impact", label:"⚡ Impact Analysis" },
     { id:"log",    label:"📝 Provenance Log Entry" },
+    { id:"impact", label:"⚡ Impact Analysis" },
     { id:"agent",  label:"🤖 Governance Agent" },
   ];
 
@@ -1439,6 +1481,7 @@ export default function App() {
   const p = presMode;
 
   return (
+    <GraphDataCtx.Provider value={{nodes:graphNodes,edges:graphEdges,addNode:addGraphNode,addEdge:addGraphEdge,updateNode:updateGraphNode}}>
     <PresentationCtx.Provider value={presMode}>
     <div style={{ display:"flex", height:"100vh", background:"#f1f5f9", fontFamily:"Georgia,'Times New Roman',serif", color:"#1e293b", overflow:"hidden" }}>
 
@@ -1517,7 +1560,7 @@ export default function App() {
             <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>HPAP scRNA-seq  W3C PROV  Knowledge Graph</span>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
-            {[["#3b82f6",`${NODES.length} nodes`],["#10b981",`${EDGES.length} edges`],["#f43f5e","Model Card ?Dataset Card"]].map(([c,l])=>(
+            {[["#3b82f6",`${graphNodes.length} nodes`],["#10b981",`${graphEdges.length} edges`],["#f43f5e","Model Card ?Dataset Card"]].map(([c,l])=>(
               <span key={l} style={{ fontSize:p?11.5:9.5, padding:"2px 7px", borderRadius:3, background:c+"12", color:c, border:`1px solid ${c}40`, fontFamily:"monospace" }}>{l}</span>
             ))}
             {/* FIX #6: presentation mode toggle */}
@@ -1552,6 +1595,7 @@ export default function App() {
       </div>
     </div>
     </PresentationCtx.Provider>
+    </GraphDataCtx.Provider>
   );
 }
 
