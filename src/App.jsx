@@ -67,7 +67,7 @@ const GRAPH_MODES = {
 //  IMPACT SCENARIOS 
 const IMPACT = {
   revision:   { label:" Dataset Revised (Type B)",   trigger:"proc_scrna", affected:new Set(["proc_scrna","dc_scrna","model_scfm","model_genomic","mc_scfm","mc_genomic"]), outdated:new Set(["model_scfm","model_genomic","mc_scfm","mc_genomic"]), notes:{ "dc_scrna":" Dataset Card must be versioned ?QC parameters changed","model_scfm":"?Outdated ?retrain required (TRAINED_ON ?revised data)","model_genomic":"?Outdated ?retrain required (TRAINED_ON ?revised data)","mc_scfm":"?Model Card outdated ?linked dataset changed","mc_genomic":"?Model Card outdated ?linked dataset changed" }},
-  deprecation:{ label:" Consent Withdrawn (Type C)", trigger:"proc_wgs",   affected:new Set(["proc_wgs","dc_wgs","model_genomic","mc_genomic"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "dc_wgs":" Dataset Card must record deprecation event","model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?LINKED_TO points to deprecated Dataset Card" }},
+  deprecation:{ label:" Policy-Driven Archival (Type C)", trigger:"proc_wgs",   affected:new Set(["proc_wgs","dc_wgs","model_genomic","mc_genomic"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "dc_wgs":" Dataset Card must record deprecation event","model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?LINKED_TO points to deprecated Dataset Card" }},
   pipeline:   { label:" QC Pipeline Updated",        trigger:"qc_scrna",   affected:new Set(["qc_scrna","proc_scrna","dc_scrna","model_scfm","model_genomic"]), outdated:new Set(["proc_scrna","model_scfm","model_genomic"]), notes:{ "proc_scrna":"?Re-processing recommended with new pipeline","dc_scrna":" Dataset Card must record new pipeline version","model_scfm":"?TRAINED_ON data produced by outdated pipeline","model_genomic":"?TRAINED_ON data produced by outdated pipeline" }},
 };
 
@@ -271,7 +271,7 @@ function ProvLogView() {
       <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", background:"#f8fafc" }}>
         <div style={{ maxWidth:580, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:22 }}>
-            <div style={{ fontSize:p?13:11, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:6 }}>Mode 1 ?Manual Provenance Log</div>
+            <div style={{ fontSize:p?13:11, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:6 }}>MODE 1 | GOVERNED UI · AI-ASSISTED PROVENANCE LOG</div>
             <div style={{ fontSize:p?18:16, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif", marginBottom:5 }}>Provenance Log Entry</div>
             <div style={{ fontSize:p?13:11, color:"#64748b", fontStyle:"italic", fontFamily:"Georgia,serif", lineHeight:1.6 }}>
               Record any update ?raw data, pipeline, processed dataset,<br/>training run, model, card, or downstream task.<br/>
@@ -652,7 +652,7 @@ function ImpactView() {
             <div style={{ padding:"10px 14px", borderRadius:8, background:"#fffbeb", border:"1px solid #fcd34d", marginBottom:16, fontSize:p?13:11, color:"#78350f", fontFamily:"Georgia,serif", lineHeight:1.6 }}>
               <strong>Trigger: </strong>
               {sc==="revision"    ? "HPAP-016 scRNA data revised ?re-QC'd with pipeline v4 (updated doublet thresholds). Raw data unchanged."
-              :sc==="deprecation" ? "HPAP-088 WGS data retracted ?consent withdrawn 2025-Q2. Raw data deprecated, downstream models on compliance hold."
+              :sc==="deprecation" ? "V2.1.1 policy change: CellRanger processed files archived across ~60 donors. Raw data unaffected — only downstream artifacts trained on processed files flagged."
               :                     "scRNA QC pipeline updated v3.1 ?v4.0 (new ambient RNA removal step). Raw data is unaffected ?only downstream artifacts flagged."}
             </div>
 
@@ -1095,13 +1095,14 @@ const AGENT_TOOLS = [
 ];
 
 const SUGGESTIONS = [
-  "What datasets trained Single-cell FM?",
-  "Which models used scRNA data?",
-  "Is any model on compliance hold?",
-  "Show the provenance chain for Genomic FM",
-  "What downstream tasks does Single-cell FM enable?",
-  "Who ran the WGS pipeline?",
-  "Which Dataset Cards does the Genomic FM Model Card link to?",
+  "What datasets trained model scFM-v1?",                      // CQ1
+  "Which models are downstream of scRNA v1.2?",                // CQ2
+  "Is HPAP-088 WGS data available for use?",                   // CQ3
+  "What QC pipeline produced scRNA for scFM-v1?",              // CQ4
+  "What governance events occurred in 2025-Q2?",               // CQ5
+  "Which models need re-eval after HPAP-016 re-QC?",           // CQ6
+  "Who is responsible for QC pipeline scRNA-v4?",              // CQ7
+  "Which Vanderbilt datasets were used post-2024?",            // CQ8
 ];
 
 function AgentView() {
@@ -1284,7 +1285,7 @@ function AgentView() {
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         <div style={{ padding:"10px 18px", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>AI Agent Interface ?Mode 4</div>
+            <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>Mode 1 / Governed UI</div>
             <div style={{ fontSize:p?15.5:13.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>MAI-T1D Governance Agent</div>
             <div style={{ fontSize:p?12:10, color:"#64748b", fontStyle:"italic", fontFamily:"Georgia,serif" }}>Queries the provenance graph via structured tool calls  Claude Sonnet</div>
           </div>
@@ -1535,7 +1536,7 @@ export default function App() {
         <div style={{ padding:"9px 18px", background:"rgba(241,245,249,0.97)", borderBottom:"1px solid #cbd5e1", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
           <div>
             <span style={{ fontWeight:700, fontSize:p?15.5:13.5, color:"#0f172a" }}>MAI-T1D  Data Traceability & Model Governance</span>
-            <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>HPAP scRNA-seq  W3C PROV  Knowledge Graph</span>
+            <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>HPAP · Multi-modal · W3C PROV · Knowledge Graph</span>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             {[["#3b82f6",`${NODES.length} nodes`],["#10b981",`${EDGES.length} edges`],["#f43f5e","Model Card ?Dataset Card"]].map(([c,l])=>(
