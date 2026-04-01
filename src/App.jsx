@@ -56,37 +56,37 @@ function buildDonorNodesForRawNode(rawNode) {
   });
 }
 
-//  GRAPH MODES 
+//  GRAPH MODES
 const GRAPH_MODES = {
-  full:    { label:"Full graph",            ids: NODES.map(n=>n.id) },
-  scfm:   { label:"Single-cell FM lineage", ids:["raw_scrna","qc_scrna","proc_scrna","dc_scrna","model_scfm","mc_scfm","task_celltype","task_deconv"] },
-  genomic:{ label:"Genomic FM lineage",    ids:["raw_scrna","raw_atac","raw_wgs","qc_scrna","qc_atac","qc_wgs","proc_scrna","proc_atac","proc_wgs","dc_scrna","dc_atac","dc_wgs","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
-  hpap002:{ label:"HPAP-002 downstream",   ids:["raw_scrna","qc_scrna","proc_scrna","dc_scrna","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"] },
+  full:    { label:"Full graph",             ids: NODES.map(n=>n.id) },
+  scgpt:   { label:"scGPT lineage",          ids:["raw_hca_heart","raw_hca_lung","raw_hca_brain","qc_census","proc_hca_heart","proc_hca_lung","proc_hca_brain","dc_hca_heart","dc_hca_lung","dc_hca_brain","model_scgpt","mc_scgpt","task_celltype_pan","task_perturbation"] },
+  geneformer:{ label:"Geneformer lineage",   ids:["raw_hca_heart","raw_hca_lung","raw_hca_brain","qc_census","proc_hca_heart","proc_hca_lung","proc_hca_brain","dc_hca_heart","dc_hca_lung","dc_hca_brain","model_geneformer","mc_geneformer","task_gene_network","task_disease_gene"] },
+  heart:   { label:"HCA Heart downstream",  ids:["raw_hca_heart","qc_census","proc_hca_heart","dc_hca_heart","model_scgpt","model_geneformer","mc_scgpt","mc_geneformer","task_celltype_pan","task_perturbation","task_gene_network","task_disease_gene"] },
 };
 
-//  IMPACT SCENARIOS 
+//  IMPACT SCENARIOS
 const IMPACT = {
-  revision:   { label:" Dataset Revised (Type B)",   trigger:"proc_scrna", affected:new Set(["proc_scrna","dc_scrna","model_scfm","model_genomic","mc_scfm","mc_genomic"]), outdated:new Set(["model_scfm","model_genomic","mc_scfm","mc_genomic"]), notes:{ "dc_scrna":" Dataset Card must be versioned ?QC parameters changed","model_scfm":"?Outdated ?retrain required (TRAINED_ON ?revised data)","model_genomic":"?Outdated ?retrain required (TRAINED_ON ?revised data)","mc_scfm":"?Model Card outdated ?linked dataset changed","mc_genomic":"?Model Card outdated ?linked dataset changed" }},
-  deprecation:{ label:" Policy-Driven Archival (Type C)", trigger:"proc_wgs",   affected:new Set(["proc_wgs","dc_wgs","model_genomic","mc_genomic"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "dc_wgs":" Dataset Card must record deprecation event","model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?LINKED_TO points to deprecated Dataset Card" }},
-  pipeline:   { label:" QC Pipeline Updated",        trigger:"qc_scrna",   affected:new Set(["qc_scrna","proc_scrna","dc_scrna","model_scfm","model_genomic"]), outdated:new Set(["proc_scrna","model_scfm","model_genomic"]), notes:{ "proc_scrna":"?Re-processing recommended with new pipeline","dc_scrna":" Dataset Card must record new pipeline version","model_scfm":"?TRAINED_ON data produced by outdated pipeline","model_genomic":"?TRAINED_ON data produced by outdated pipeline" }},
+  revision:   { label:"Census Version Updated (Type B)",      trigger:"proc_hca_lung",  affected:new Set(["proc_hca_lung","dc_hca_lung","model_scgpt","model_geneformer","mc_scgpt","mc_geneformer"]), outdated:new Set(["model_scgpt","model_geneformer","mc_scgpt","mc_geneformer"]), notes:{ "dc_hca_lung":"Dataset Card must be versioned — Census release changed QC schema","model_scgpt":"Outdated — retrain required (TRAINED_ON revised HLCA data)","model_geneformer":"Outdated — retrain required (TRAINED_ON revised HLCA data)","mc_scgpt":"Model Card outdated — linked dataset version changed","mc_geneformer":"Model Card outdated — linked dataset version changed" }},
+  deprecation:{ label:"Cell-type Annotation Retracted (Type C)", trigger:"proc_hca_brain", affected:new Set(["proc_hca_brain","dc_hca_brain","model_scgpt","model_geneformer","mc_scgpt","mc_geneformer"]), outdated:new Set(["model_scgpt","model_geneformer","mc_scgpt","mc_geneformer"]), notes:{ "dc_hca_brain":"Dataset Card must record annotation retraction event","model_scgpt":"COMPLIANCE HOLD — TRAINED_ON edge traces to retracted annotation set","model_geneformer":"COMPLIANCE HOLD — TRAINED_ON edge traces to retracted annotation set","mc_scgpt":"Model Card outdated — LINKED_TO points to deprecated Dataset Card","mc_geneformer":"Model Card outdated — LINKED_TO points to deprecated Dataset Card" }},
+  pipeline:   { label:"QC Schema Updated (Type B)",           trigger:"qc_census",      affected:new Set(["qc_census","proc_hca_heart","proc_hca_lung","proc_hca_brain","dc_hca_heart","dc_hca_lung","dc_hca_brain","model_scgpt","model_geneformer"]), outdated:new Set(["proc_hca_heart","proc_hca_lung","proc_hca_brain","model_scgpt","model_geneformer"]), notes:{ "proc_hca_heart":"Re-processing recommended with new CELLxGENE schema v5.2","proc_hca_lung":"Re-processing recommended with new CELLxGENE schema v5.2","proc_hca_brain":"Re-processing recommended with new CELLxGENE schema v5.2","dc_hca_heart":"Dataset Card must record new schema version","dc_hca_lung":"Dataset Card must record new schema version","dc_hca_brain":"Dataset Card must record new schema version","model_scgpt":"TRAINED_ON data produced by outdated QC schema","model_geneformer":"TRAINED_ON data produced by outdated QC schema" }},
 };
 
 //  PROV LOG CONFIG 
 const NODE_OPTIONS = {
-  RawData:    { label:"Raw Data update",                icon:"🧬", instances:[{id:"raw_scrna",label:"HPAP scRNA-seq"},{id:"raw_atac",label:"HPAP scATAC-seq"},{id:"raw_wgs",label:"HPAP WGS"},{id:"raw_spatial",label:"Spatial CODEX/IMC"}], fields:[{key:"donor_range",label:"Donor range / batch",placeholder:"e.g. HPAP-002 ?HPAP-049"},{key:"portal_url",label:"Portal URL",placeholder:"hpap.pmacs.upenn.edu/..."},{key:"lighthouse",label:"Lighthouse path",placeholder:"/lighthouse/mai-t1d/raw/..."},{key:"access",label:"DUA / access level",placeholder:"DUA-HPAP-2024-001"},{key:"checksum",label:"Checksum",placeholder:"sha256:..."}] },
-  Pipeline:   { label:"QC Pipeline update",             icon:"⚙️", instances:[{id:"qc_scrna",label:"scRNA QC Pipeline"},{id:"qc_atac",label:"scATAC QC Pipeline"},{id:"qc_wgs",label:"WGS Variant Calling"},{id:"qc_spatial",label:"Spatial QC Pipeline"}], fields:[{key:"version",label:"New version",placeholder:"e.g. v4.0"},{key:"tool",label:"Main tool(s)",placeholder:"e.g. Scanpy 2.0"},{key:"github",label:"GitHub link",placeholder:"github.com/mai-t1d/pipelines/..."},{key:"script_hash",label:"Script hash",placeholder:"sha256: or git commit"},{key:"slurm_job",label:"SLURM Job ID",placeholder:"e.g. 12345678"},{key:"change_note",label:"What changed?",placeholder:"e.g. Updated doublet detection thresholds"}] },
-  ProcessedData:{ label:"Processed dataset update",    icon:"📊", instances:[{id:"proc_scrna",label:"scRNA Dataset"},{id:"proc_atac",label:"scATAC Dataset"},{id:"proc_wgs",label:"WGS Variant Matrix"},{id:"proc_spatial",label:"Spatial Protein Matrix"}], fields:[{key:"version",label:"New version",placeholder:"e.g. v2.2"},{key:"cells_before",label:"Cells before QC",placeholder:"e.g. 90,000"},{key:"cells_after",label:"Cells after QC",placeholder:"e.g. 76,000"},{key:"lighthouse",label:"Lighthouse path",placeholder:"/lighthouse/mai-t1d/processed/..."},{key:"checksum",label:"Checksum",placeholder:"sha256:..."},{key:"change_note",label:"What changed?",placeholder:"e.g. Re-processed with QC pipeline v4"}] },
-  TrainingRun:{ label:"New training run (TRAINED_ON edge)",               icon:"🏋️", instances:[{id:"scfm",label:"scFM-T1D (Single-cell FM)"},{id:"genomic_fm",label:"Genomic FM (EPCOT-v2)"},{id:"spatial_fm",label:"Spatial FM (Kronos) ?planned"},{id:"spatial_prot",label:"Spatial Proteomics FM ?planned"}], fields:[{key:"model_version",label:"Model version",placeholder:"e.g. v1.1"},{key:"train_date",label:"Training date",type:"date"},{key:"slurm_job",label:"SLURM Job ID",placeholder:"e.g. 99887766"},{key:"github",label:"Training script (GitHub)",placeholder:"github.com/mai-t1d/pipelines/..."},{key:"script_hash",label:"Script hash",placeholder:"sha256: or git commit"},{key:"gpu",label:"GPU / cluster",placeholder:"e.g. 8 A100 80GB ?Lighthouse HPC"}], hasDatasets:true },
-  Model:      { label:"Model checkpoint update",        icon:"🧠", instances:[{id:"scfm",label:"scFM-T1D (Single-cell FM)"},{id:"genomic_fm",label:"Genomic FM (EPCOT-v2)"},{id:"spatial_fm",label:"Spatial FM (Kronos) ?planned"},{id:"spatial_prot",label:"Spatial Proteomics FM ?planned"}], fields:[{key:"version",label:"Version",placeholder:"e.g. v1.1"},{key:"lighthouse",label:"Lighthouse path",placeholder:"/lighthouse/mai-t1d/models/..."},{key:"checksum",label:"Checksum",placeholder:"sha256:..."},{key:"f1",label:"Primary metric",placeholder:"e.g. F1 macro: 0.94"},{key:"change_note",label:"What changed?",placeholder:"e.g. Fine-tuned on additional donors"}] },
-  DatasetCard:{ label:"Dataset Card publish / update",  icon:"📄", instances:[{id:"dc_scrna",label:"Dataset Card ?scRNA"},{id:"dc_atac",label:"Dataset Card ?scATAC"},{id:"dc_wgs",label:"Dataset Card ?WGS"},{id:"dc_spatial",label:"Dataset Card ?Spatial"}], fields:[{key:"github",label:"GitHub link (JSON-LD file)",placeholder:"github.com/mai-t1d/governance/dataset-cards/..."},{key:"linked_data",label:"Linked dataset ID + version",placeholder:"e.g. scrna_v2.2"},{key:"change_note",label:"What changed?",placeholder:"e.g. Updated consent status"}] },
-  ModelCard:  { label:"Model Card publish / update",    icon:"📋", instances:[{id:"mc_scfm",label:"Model Card ?scFM-T1D"},{id:"mc_genomic",label:"Model Card ?Genomic FM"},{id:"mc_spatial",label:"Model Card ?Spatial FM ?planned"}], fields:[{key:"github",label:"GitHub link (JSON-LD file)",placeholder:"github.com/mai-t1d/governance/model-cards/..."},{key:"linked_model",label:"Linked model ID + version",placeholder:"e.g. scfm_v1.1"},{key:"linked_dc",label:"Linked Dataset Card(s)",placeholder:"e.g. dc_scrna_v2.2"},{key:"change_note",label:"What changed?",placeholder:"e.g. Updated eval metrics after retraining"}] },
+  RawData:    { label:"Raw Data update",                icon:"🧬", instances:[{id:"raw_hca_heart",label:"HCA Census: Heart"},{id:"raw_hca_lung",label:"HCA Census: Lung"},{id:"raw_hca_brain",label:"HCA Census: Brain"}], fields:[{key:"tissue",label:"Tissue",placeholder:"e.g. Heart"},{key:"n_cells",label:"N cells",placeholder:"e.g. 500,000"},{key:"census_version",label:"Census version",placeholder:"e.g. v2024-07-01"},{key:"access",label:"Access level",placeholder:"e.g. Open (CC BY 4.0)"},{key:"portal_url",label:"Portal URL",placeholder:"cellxgene.cziscience.com/..."}] },
+  Pipeline:   { label:"QC Pipeline update",             icon:"⚙️", instances:[{id:"qc_census",label:"CELLxGENE Schema QC"}], fields:[{key:"version",label:"New schema version",placeholder:"e.g. v5.2.0"},{key:"tool",label:"Main tool(s)",placeholder:"e.g. TileDB-SOMA"},{key:"github",label:"GitHub link",placeholder:"github.com/chanzuckerberg/single-cell-curation"},{key:"change_note",label:"What changed?",placeholder:"e.g. Updated is_primary_data filter logic"}] },
+  ProcessedData:{ label:"Processed dataset update",    icon:"📊", instances:[{id:"proc_hca_heart",label:"HCA Heart Atlas"},{id:"proc_hca_lung",label:"HLCA Core"},{id:"proc_hca_brain",label:"HCA Brain Atlas"}], fields:[{key:"version",label:"New version",placeholder:"e.g. v2.0"},{key:"cells_after",label:"Cells after QC",placeholder:"e.g. 480,000"},{key:"cell_types",label:"Cell types annotated",placeholder:"e.g. 30+"},{key:"doi",label:"DOI",placeholder:"e.g. 10.1038/..."},{key:"change_note",label:"What changed?",placeholder:"e.g. Re-processed with schema v5.2"}] },
+  TrainingRun:{ label:"New training run (TRAINED_ON edge)", icon:"🏋️", instances:[{id:"model_scgpt",label:"scGPT (Pan-tissue FM)"},{id:"model_geneformer",label:"Geneformer (Pan-tissue FM)"}], fields:[{key:"model_version",label:"Model version",placeholder:"e.g. v2.0"},{key:"train_date",label:"Training date",type:"date"},{key:"n_cells",label:"Training cells",placeholder:"e.g. 33M"},{key:"github",label:"Training script (GitHub)",placeholder:"github.com/bowang-lab/scGPT"},{key:"gpu",label:"GPU / cluster",placeholder:"e.g. 8 A100 80GB"}], hasDatasets:true },
+  Model:      { label:"Model checkpoint update",        icon:"🧠", instances:[{id:"model_scgpt",label:"scGPT v1"},{id:"model_geneformer",label:"Geneformer v2"}], fields:[{key:"version",label:"Version",placeholder:"e.g. v2.0"},{key:"f1",label:"Primary metric",placeholder:"e.g. F1 macro: 0.96"},{key:"publication",label:"Publication",placeholder:"e.g. Nature Methods 2024"},{key:"change_note",label:"What changed?",placeholder:"e.g. Fine-tuned on additional tissues"}] },
+  DatasetCard:{ label:"Dataset Card publish / update",  icon:"📄", instances:[{id:"dc_hca_heart",label:"Dataset Card — HCA Heart"},{id:"dc_hca_lung",label:"Dataset Card — HLCA"},{id:"dc_hca_brain",label:"Dataset Card — HCA Brain"}], fields:[{key:"github",label:"GitHub link (JSON-LD file)",placeholder:"github.com/chanzuckerberg/cellxgene-census/dataset-cards/..."},{key:"linked_data",label:"Linked dataset ID + version",placeholder:"e.g. hca_heart_v2.0"},{key:"change_note",label:"What changed?",placeholder:"e.g. Updated known biases section"}] },
+  ModelCard:  { label:"Model Card publish / update",    icon:"📋", instances:[{id:"mc_scgpt",label:"Model Card — scGPT v1"},{id:"mc_geneformer",label:"Model Card — Geneformer v2"}], fields:[{key:"github",label:"GitHub link (JSON-LD file)",placeholder:"github.com/bowang-lab/scGPT/model-card.jsonld"},{key:"linked_model",label:"Linked model ID + version",placeholder:"e.g. scgpt_v2.0"},{key:"linked_dc",label:"Linked Dataset Card(s)",placeholder:"e.g. dc_hca_heart, dc_hca_lung"},{key:"change_note",label:"What changed?",placeholder:"e.g. Updated eval metrics after retraining"}] },
   DownstreamTask: { label:"Downstream Task change", icon:"🎯",
     instances:[
-      { id:"task_celltype",  label:"Cell-type Classification (scFM)" },
-      { id:"task_deconv",    label:"Islet Deconvolution (scFM)" },
-      { id:"task_eqtl",      label:"eQTL Prediction (Genomic FM)" },
-      { id:"task_epigenome", label:"Epigenome Prediction (Genomic FM)" },
-      { id:"task_new",       label:"Add new task" },
+      { id:"task_celltype_pan", label:"Pan-tissue Cell-type Classification (scGPT)" },
+      { id:"task_perturbation", label:"Perturbation Response Prediction (scGPT)" },
+      { id:"task_gene_network", label:"Gene Network Inference (Geneformer)" },
+      { id:"task_disease_gene", label:"Disease Gene Prioritization (Geneformer)" },
+      { id:"task_new",          label:"Add new task" },
     ],
     hasTaskOp: true,
     fields_update:[
@@ -113,8 +113,8 @@ const NODE_OPTIONS = {
   },
 };
 
-const INSTITUTIONS = ["University of Michigan","Vanderbilt University","Cornell University","University of South Florida","UCLA"];
-const MODALITIES   = ["scRNA-seq","scATAC-seq","WGS","Spatial (CODEX)","Spatial (IMC)","snMultiome","TEA-seq","Flow Cytometry","Clinical Metadata"];
+const INSTITUTIONS = ["Chan Zuckerberg Initiative","Broad Institute","University of Toronto","Gladstone Institutes","Helmholtz Munich","Allen Institute","EMBL-EBI"];
+const MODALITIES   = ["scRNA-seq","scATAC-seq","Spatial transcriptomics","Bulk RNA-seq","CITE-seq","Multiome (RNA+ATAC)","Clinical Metadata"];
 
 //  PRESENTATION MODE CONTEXT 
 const PresentationCtx = React.createContext(false);
@@ -551,15 +551,13 @@ function computeImpact(triggerId, eventType) {
 }
 
 const CUSTOM_NODE_OPTIONS = [
-  { id:"qc_scrna",   label:"scRNA QC Pipeline v3.1",   type:"Pipeline" },
-  { id:"qc_atac",    label:"scATAC QC Pipeline v2.0",  type:"Pipeline" },
-  { id:"qc_wgs",     label:"WGS Variant Calling v1.2", type:"Pipeline" },
-  { id:"proc_scrna", label:"scRNA Dataset v2.1",        type:"ProcessedData" },
-  { id:"proc_atac",  label:"scATAC Dataset v1.3",       type:"ProcessedData" },
-  { id:"proc_wgs",   label:"WGS Variant Matrix v1.0",  type:"ProcessedData" },
-  { id:"raw_scrna",  label:"HPAP-002 scRNA-seq",        type:"RawData" },
-  { id:"raw_atac",   label:"HPAP cohort scATAC-seq",    type:"RawData" },
-  { id:"raw_wgs",    label:"HPAP cohort WGS",           type:"RawData" },
+  { id:"qc_census",       label:"CELLxGENE Schema QC v5.1",   type:"Pipeline" },
+  { id:"proc_hca_heart",  label:"HCA Heart Atlas v1.0",        type:"ProcessedData" },
+  { id:"proc_hca_lung",   label:"HLCA Core v2.0",              type:"ProcessedData" },
+  { id:"proc_hca_brain",  label:"HCA Brain Atlas v1.0",        type:"ProcessedData" },
+  { id:"raw_hca_heart",   label:"HCA Census: Heart",           type:"RawData" },
+  { id:"raw_hca_lung",    label:"HCA Census: Lung",            type:"RawData" },
+  { id:"raw_hca_brain",   label:"HCA Census: Brain",           type:"RawData" },
 ];
 
 const EVENT_TYPES = [
@@ -568,13 +566,13 @@ const EVENT_TYPES = [
   { id:"A", label:"Type A ?New data added",            desc:"New donor batch appended to existing dataset" },
 ];
 
-const ORDER = ["raw_scrna","raw_atac","raw_wgs","qc_scrna","qc_atac","qc_wgs","proc_scrna","proc_atac","proc_wgs","dc_scrna","dc_atac","dc_wgs","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"];
+const ORDER = ["raw_hca_heart","raw_hca_lung","raw_hca_brain","qc_census","proc_hca_heart","proc_hca_lung","proc_hca_brain","dc_hca_heart","dc_hca_lung","dc_hca_brain","model_scgpt","model_geneformer","mc_scgpt","mc_geneformer","task_celltype_pan","task_perturbation","task_gene_network","task_disease_gene"];
 
 function ImpactView() {
   const p = usePres();
   const [tab,         setTab]         = useState("scenario");
   const [sc,          setSc]          = useState("pipeline");
-  const [customNode,  setCustomNode]  = useState("qc_scrna");
+  const [customNode,  setCustomNode]  = useState("qc_census");
   const [eventType,   setEventType]   = useState("B");
   const [customResult,setCustomResult]= useState(null);
 
@@ -651,9 +649,9 @@ function ImpactView() {
 
             <div style={{ padding:"10px 14px", borderRadius:8, background:"#fffbeb", border:"1px solid #fcd34d", marginBottom:16, fontSize:p?13:11, color:"#78350f", fontFamily:"Georgia,serif", lineHeight:1.6 }}>
               <strong>Trigger: </strong>
-              {sc==="revision"    ? "HPAP-016 scRNA data revised ?re-QC'd with pipeline v4 (updated doublet thresholds). Raw data unchanged."
-              :sc==="deprecation" ? "V2.1.1 policy change: CellRanger processed files archived across ~60 donors. Raw data unaffected — only downstream artifacts trained on processed files flagged."
-              :                     "scRNA QC pipeline updated v3.1 ?v4.0 (new ambient RNA removal step). Raw data is unaffected ?only downstream artifacts flagged."}
+              {sc==="revision"    ? "HCA Census v2024-10-01 released: HLCA Core (lung) revised with updated cell-type annotations. Raw data unchanged — only downstream artifacts flagged."
+              :sc==="deprecation" ? "HCA Brain Atlas v1.0 cell-type annotation set retracted due to label inconsistencies. Raw data unaffected — only models trained on annotated data flagged."
+              :                     "CELLxGENE Schema updated v5.1 → v5.2 (new is_primary_data filter logic). All tissue atlases require re-processing — downstream models flagged."}
             </div>
 
             {renderNodeList(s.trigger, s.affected, s.outdated)}
@@ -1068,7 +1066,7 @@ function queryGraph(intent, params) {
 
 //  AGENT VIEW 
 const GRAPH_CONTEXT = `
-You are a governance agent for the MAI-T1D (Multimodal AI for Type 1 Diabetes) project knowledge graph.
+You are a governance agent for the HCA Census provenance knowledge graph (external dataset generalizability PoC, based on the MAI-T1D framework).
 The graph tracks W3C PROV provenance from raw biobank data to foundation models.
 
 NODE TYPES: RawData, Pipeline, ProcessedData, DatasetCard, Model, ModelCard, DownstreamTask
@@ -1086,23 +1084,23 @@ Note: In a production system, graph data would be retrieved via indexed queries 
 `;
 
 const AGENT_TOOLS = [
-  { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
+  { name:"queryGraph", description:"Execute a structured query against the HCA Census provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail"], description:"The query pattern to execute" },
-      params:{ type:"object", description:"Parameters for the query, e.g. {modelId:'model_scfm'} or {datasetId:'proc_scrna'} or {nodeId:'model_genomic'} or {query:'search string'}" }
+      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail"], description:"The query pattern to execute. Use 'datasets_for_model' to find what data trained a model (params: modelId). Use 'models_for_dataset' to find which models were trained on a dataset or are affected by a dataset change (params: datasetId). Use 'downstream_tasks' to find tasks enabled by a model (params: modelId). Use 'compliance_status' to check governance/hold status of a node (params: nodeId). Use 'pipeline_for_dataset' to find what QC pipeline produced a dataset (params: datasetId). Use 'provenance_chain' to trace full lineage of a node (params: nodeId). Use 'card_links' to find Model/Dataset Cards linked to a node (params: nodeId). Use 'node_detail' to retrieve metadata for a specific node (params: nodeId)." },
+      params:{ type:"object", description:"Parameters for the query. 'modelId' for model nodes (e.g. 'model_scgpt', 'model_geneformer'). 'datasetId' for dataset nodes (e.g. 'proc_hca_heart', 'proc_hca_lung', 'proc_hca_brain'). 'nodeId' for any node. Never leave params empty — always supply the relevant id." }
     }, required:["intent","params"] }
   }
 ];
 
 const SUGGESTIONS = [
-  "What datasets trained model scFM-v1?",                      // CQ1
-  "Which models are downstream of scRNA v1.2?",                // CQ2
-  "Is HPAP-088 WGS data available for use?",                   // CQ3
-  "What QC pipeline produced scRNA for scFM-v1?",              // CQ4
-  "What governance events occurred in 2025-Q2?",               // CQ5
-  "Which models need re-eval after HPAP-016 re-QC?",           // CQ6
-  "Who is responsible for QC pipeline scRNA-v4?",              // CQ7
-  "Which Vanderbilt datasets were used post-2024?",            // CQ8
+  "What datasets trained scGPT?",                                       // CQ1
+  "Which models are affected if the lung atlas is revised?",            // CQ2
+  "Is the HCA Brain Atlas available for use?",                          // CQ3
+  "What QC pipeline produced the HCA Heart Atlas?",                     // CQ4
+  "What is the compliance status of Geneformer?",                       // CQ5
+  "Which models need re-eval after the CELLxGENE schema is updated?",   // CQ6
+  "Who is responsible for the CELLxGENE QC pipeline?",                  // CQ7
+  "Which datasets were used after the Census v2024 release?",  // CQ8
 ];
 
 function AgentView() {
@@ -1286,7 +1284,7 @@ function AgentView() {
         <div style={{ padding:"10px 18px", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
             <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>Mode 1 / Governed UI</div>
-            <div style={{ fontSize:p?15.5:13.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>MAI-T1D Governance Agent</div>
+            <div style={{ fontSize:p?15.5:13.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>HCA Census Governance Agent</div>
             <div style={{ fontSize:p?12:10, color:"#64748b", fontStyle:"italic", fontFamily:"Georgia,serif" }}>Queries the provenance graph via structured tool calls  Claude Sonnet</div>
           </div>
           {messages.length > 0 && (
@@ -1305,7 +1303,7 @@ function AgentView() {
               <div style={{ fontSize:36, opacity:0.12 }}>🤖</div>
               <div style={{ fontSize:p?15:13, fontWeight:700, color:"#94a3b8", fontFamily:"Georgia,serif" }}>Ask a governance question</div>
               <div style={{ fontSize:p?13:11, color:"#94a3b8", fontStyle:"italic", fontFamily:"Georgia,serif", textAlign:"center", lineHeight:1.7 }}>
-                The agent will query the MAI-T1D<br/>provenance graph and explain the results.
+                The agent will query the HCA Census<br/>provenance graph and explain the results.
               </div>
             </div>
           )}
@@ -1451,10 +1449,10 @@ export default function App() {
   ];
 
   const GMODES = [
-    { id:"full",    label:"Full graph" },
-    { id:"scfm",    label:"Single-cell FM lineage" },
-    { id:"genomic", label:"Genomic FM lineage" },
-    { id:"hpap002", label:"HPAP-002 downstream" },
+    { id:"full",        label:"Full graph" },
+    { id:"scgpt",       label:"scGPT lineage" },
+    { id:"geneformer",  label:"Geneformer lineage" },
+    { id:"heart",       label:"HCA Heart downstream" },
   ];
 
   const p = presMode;
@@ -1535,8 +1533,8 @@ export default function App() {
         {/* top bar */}
         <div style={{ padding:"9px 18px", background:"rgba(241,245,249,0.97)", borderBottom:"1px solid #cbd5e1", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
           <div>
-            <span style={{ fontWeight:700, fontSize:p?15.5:13.5, color:"#0f172a" }}>MAI-T1D  Data Traceability & Model Governance</span>
-            <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>HPAP · Multi-modal · W3C PROV · Knowledge Graph</span>
+            <span style={{ fontWeight:700, fontSize:p?15.5:13.5, color:"#0f172a" }}>HCA Census  Data Traceability & Model Governance</span>
+            <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>CZ CELLxGENE · Pan-tissue · W3C PROV · Knowledge Graph</span>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             {[["#3b82f6",`${NODES.length} nodes`],["#10b981",`${EDGES.length} edges`],["#f43f5e","Model Card ?Dataset Card"]].map(([c,l])=>(

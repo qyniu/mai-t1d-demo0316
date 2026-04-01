@@ -1,4 +1,4 @@
-﻿//  NODE TYPES 
+//  NODE TYPES — unchanged from HPAP demo (zero PROV core modification)
 export const TYPE = {
   RawData:       { bg:"#eff6ff", border:"#3b82f6", text:"#1e40af", badge:"#dbeafe", icon:"🧬", label:"Raw Biobank Data" },
   Pipeline:      { bg:"#f0fdf4", border:"#22c55e", text:"#15803d", badge:"#dcfce7", icon:"⚙️", label:"QC Pipeline" },
@@ -24,91 +24,112 @@ export const EDGE_LEGEND = [
   { key:"WAS_GENERATED_BY", label:"WAS_GENERATED_BY" },
   { key:"TRAINED_ON",       label:"TRAINED_ON (with training metadata)" },
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
-  { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
+  { key:"LINKED_TO",        label:"LINKED_TO — core contribution" },
   { key:"ENABLES",          label:"ENABLES" },
   { key:"HAS_DONOR",        label:"HAS_DONOR" },
 ];
 
-//  NODES 
+//  NODES — HCA Census external dataset PoC
+//  Mirrors HPAP structure exactly: same 7 node types, same edge vocabulary
+//  Only extension properties (names, metadata values) have changed
 export const NODES = [
-  { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
-    detail:{ "Donor":"HPAP-002", "Modality":"scRNA-seq", "Source":"HPAP / PancDB", "Platform":"10x Genomics Chromium v3", "Lighthouse":"/lighthouse/mai-t1d/raw/scrna/hpap002/", "Portal":"hpap.pmacs.upenn.edu", "Access":"DUA-HPAP-2024-001", "Responsible":"HPAP Consortium / UPenn", "Checksum":"sha256:a1b2c3..." }},
-  { id:"raw_atac",   label:"HPAP cohort\nscATAC-seq",     type:"RawData",
-    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001", "Connections":"USED scATAC QC Pipeline v2.0" }},
-  { id:"raw_wgs",    label:"HPAP cohort\nWGS",            type:"RawData",
-    detail:{ "Modality":"WGS", "Donors":"194 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/wgs/", "Access":"DUA-HPAP-2024-001", "Connections":"USED WGS Variant Calling v1.2" }},
 
-  { id:"qc_scrna",   label:"scRNA QC\nPipeline v3.1",     type:"Pipeline",
-    detail:{ "Version":"v3.1", "Tool":"Scanpy 1.9 + DoubletFinder", "Min genes/cell":"200", "Max mito %":"< 20%", "Batch correction":"Harmony", "Script Hash":"sha256:1c2d3e...", "GitHub":"github.com/mai-t1d/pipelines/qc-scrna", "Run Date":"2025-10-14", "SLURM Job":"12345678", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
-  { id:"qc_atac",    label:"scATAC QC\nPipeline v2.0",    type:"Pipeline",
-    detail:{ "Version":"v2.0", "Tool":"ArchR 1.0.2", "GitHub":"github.com/mai-t1d/pipelines/qc-atac", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
-  { id:"qc_wgs",     label:"WGS Variant\nCalling v1.2",   type:"Pipeline",
-    detail:{ "Version":"v1.2", "Tool":"GATK 4.3 + bcftools", "GitHub":"github.com/mai-t1d/pipelines/wgs-varcall", "Executor":"Diane Saunders", "Institution":"Vanderbilt University" }},
+  // --- RAW DATA (3 nodes, one per tissue) ---
+  { id:"raw_hca_heart", label:"HCA Census\nHeart", type:"RawData",
+    detail:{ "Tissue":"Heart", "Modality":"scRNA-seq", "Assay":"10x 3' v3", "N_Cells":"~500,000", "N_Donors":"~140", "Disease":"Normal", "Organism":"Homo sapiens", "Source":"CZ CELLxGENE Census v2024-07-01", "Portal":"cellxgene.cziscience.com", "Access":"Open (CC BY 4.0)", "Responsible":"CZI / HCA Consortium" }},
+  { id:"raw_hca_lung",  label:"HCA Census\nLung",  type:"RawData",
+    detail:{ "Tissue":"Lung", "Modality":"scRNA-seq", "Assay":"10x 3' v3", "N_Cells":"~2,400,000", "N_Donors":"~400", "Disease":"Normal / IPF", "Organism":"Homo sapiens", "Source":"CZ CELLxGENE Census v2024-07-01", "Portal":"cellxgene.cziscience.com", "Access":"Open (CC BY 4.0)", "Responsible":"CZI / HLCA Consortium" }},
+  { id:"raw_hca_brain", label:"HCA Census\nBrain", type:"RawData",
+    detail:{ "Tissue":"Brain", "Modality":"scRNA-seq", "Assay":"10x 3' v3", "N_Cells":"~3,400,000", "N_Donors":"~300", "Disease":"Normal", "Organism":"Homo sapiens", "Source":"CZ CELLxGENE Census v2024-07-01", "Portal":"cellxgene.cziscience.com", "Access":"Open (CC BY 4.0)", "Responsible":"CZI / Allen Brain Institute" }},
 
-  { id:"proc_scrna", label:"scRNA Dataset\nv2.1",         type:"ProcessedData",
-    detail:{ "Version":"v2.1", "Cells before QC":"84,200", "Cells after QC":"72,400", "Cells removed":"~14%", "Donors":"10 (incl. HPAP-002)", "HVGs retained":"3,000", "Doublet rate":"8%", "Median genes/cell":"1,840", "Format":"AnnData .h5ad", "Lighthouse":"/lighthouse/mai-t1d/processed/scrna_v2.1.h5ad", "Deprecated":"false" }},
-  { id:"proc_atac",  label:"scATAC Dataset\nv1.3",        type:"ProcessedData",
-    detail:{ "Version":"v1.3", "Cells after QC":"48,200", "Peaks called":"142,000", "Format":"ArchR + .h5ad", "Lighthouse":"/lighthouse/mai-t1d/processed/atac_v1.3/", "Deprecated":"false" }},
-  { id:"proc_wgs",   label:"WGS Variant\nMatrix v1.0",    type:"ProcessedData",
-    detail:{ "Version":"v1.0", "Donors":"194", "Variants (PASS)":"4.2M SNPs", "Format":"VCF + PLINK", "Lighthouse":"/lighthouse/mai-t1d/processed/wgs_v1.0/", "Deprecated":"false" }},
+  // --- QC PIPELINE (1 shared pipeline across all tissues) ---
+  { id:"qc_census", label:"CELLxGENE\nSchema QC v5.1", type:"Pipeline",
+    detail:{ "Version":"v5.1.0", "Tool":"CELLxGENE Schema + TileDB-SOMA", "Cell filter":"is_primary_data == True", "Min genes/cell":"200", "Doublet removal":"Per-dataset contributor QC", "Batch correction":"None at ingestion (per-study)", "Schema":"github.com/chanzuckerberg/single-cell-curation", "Executor":"Chan Zuckerberg Initiative", "Institution":"CZI Biohub" }},
 
-  { id:"dc_scrna",   label:"Dataset Card\n(scRNA v2.1)",   type:"DatasetCard",
-    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/scrna_v2.1.jsonld", "Author":"Kai Liu", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Known biases":"Skews toward recent-onset T1D", "Status":"Published", "Updated":"2025-10-15" }},
-  { id:"dc_atac",    label:"Dataset Card\n(scATAC v1.3)",  type:"DatasetCard",
-    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/atac_v1.3.jsonld", "Author":"Kai Liu", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Known biases":"Limited donor pool; no pediatric donors", "Status":"Published", "Updated":"2025-10-22" }},
-  { id:"dc_wgs",     label:"Dataset Card\n(WGS v1.0)",     type:"DatasetCard",
-    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/wgs_v1.0.jsonld", "Author":"Diane Saunders", "Institution":"Vanderbilt University", "Consent":"Open (HPAP DUA)", "Known biases":"European ancestry overrepresented", "Status":"Published", "Updated":"2025-09-10" }},
+  // --- PROCESSED DATA (3 nodes, one tissue atlas per tissue) ---
+  { id:"proc_hca_heart", label:"HCA Heart\nAtlas v1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Cells after QC":"~480,000", "Cell types annotated":"30+", "Format":"AnnData .h5ad + TileDB-SOMA", "Embedding":"scVI latent space", "Source":"CZ CELLxGENE Census v2024-07-01", "DOI":"10.1038/s41586-023-06818-7", "Deprecated":"false" }},
+  { id:"proc_hca_lung",  label:"HLCA Core\nv2.0",       type:"ProcessedData",
+    detail:{ "Version":"v2.0", "Cells after QC":"~2,300,000", "Cell types annotated":"58", "Format":"AnnData .h5ad + TileDB-SOMA", "Embedding":"scANVI integrated", "Source":"CZ CELLxGENE Census v2024-07-01", "DOI":"10.1038/s41591-023-02327-2", "Deprecated":"false" }},
+  { id:"proc_hca_brain", label:"HCA Brain\nAtlas v1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Cells after QC":"~3,300,000", "Cell types annotated":"100+", "Format":"AnnData .h5ad + TileDB-SOMA", "Embedding":"scVI latent space", "Source":"CZ CELLxGENE Census v2024-07-01", "DOI":"10.1126/science.add7046", "Deprecated":"false" }},
 
-  { id:"model_scfm",    label:"Single-cell FM v1\n(scFM-T1D)", type:"Model",
-    detail:{ "Version":"v1.0", "Architecture":"scGPT 70M params", "Cell-type F1 (macro)":"0.93", "Beta-cell F1":"0.95", "Alpha-cell F1":"0.92", "Eval set":"scRNA v2.1 (20% holdout)", "Lighthouse":"/lighthouse/mai-t1d/models/scfm_v1.0/", "Status":"Active", "Compliance hold":"false" }},
-  { id:"model_genomic", label:"Genomic FM v1\n(EPCOT-v2)",     type:"Model",
-    detail:{ "Version":"v1.0", "Architecture":"EPCOT multi-modal transformer", "AUROC (epigenome)":"0.91", "Pearson r (expression)":"0.87", "Eval set":"Multi-modal held-out", "Lighthouse":"/lighthouse/mai-t1d/models/genomic_v1.0/", "Status":"Active", "Compliance hold":"false" }},
+  // --- DATASET CARDS (3 nodes) ---
+  { id:"dc_hca_heart", label:"Dataset Card\n(HCA Heart v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/chanzuckerberg/cellxgene-census/dataset-cards/hca_heart_v1.jsonld", "Author":"HCA Consortium / CZI", "Institution":"Chan Zuckerberg Initiative", "Consent":"Open (CC BY 4.0)", "Known biases":"Predominantly healthy donors; limited age range", "Status":"Published", "Updated":"2024-07-01" }},
+  { id:"dc_hca_lung",  label:"Dataset Card\n(HLCA v2.0)",      type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/chanzuckerberg/cellxgene-census/dataset-cards/hlca_v2.jsonld", "Author":"HLCA Consortium / CZI", "Institution":"Helmholtz Munich / CZI", "Consent":"Open (CC BY 4.0)", "Known biases":"IPF overrepresented in disease cohort", "Status":"Published", "Updated":"2024-07-01" }},
+  { id:"dc_hca_brain", label:"Dataset Card\n(HCA Brain v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/chanzuckerberg/cellxgene-census/dataset-cards/hca_brain_v1.jsonld", "Author":"Allen Brain Institute / CZI", "Institution":"Allen Institute / CZI", "Consent":"Open (CC BY 4.0)", "Known biases":"Adult donors only; limited subcortical coverage", "Status":"Published", "Updated":"2024-07-01" }},
 
-  { id:"mc_scfm",    label:"Model Card\n(scFM v1)",          type:"ModelCard",
-    detail:{ "Standard":"Model Cards (FAccT 2019)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/model-cards/scfm_v1.0.jsonld", "Author":"Kai Liu", "Linked dataset card":"scRNA v2.1", "Intended use":"Cell-type annotation, T1D research", "Status":"Published" }},
-  { id:"mc_genomic", label:"Model Card\n(Genomic FM v1)",    type:"ModelCard",
-    detail:{ "Standard":"Model Cards (FAccT 2019)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/model-cards/genomic_v1.0.jsonld", "Author":"Kai Liu", "Linked dataset cards":"scRNA v2.1, scATAC v1.3, WGS v1.0", "Intended use":"Genomic prediction, regulatory elements", "Status":"Published" }},
+  // --- MODELS (2 nodes) ---
+  { id:"model_scgpt", label:"scGPT v1\n(Pan-tissue FM)", type:"Model",
+    detail:{ "Version":"v1.0", "Architecture":"Transformer, ~51M params", "Training cells":"~33M (CZ CELLxGENE)", "Cell-type F1 (macro)":"0.95", "Perturbation AUROC":"0.88", "Eval set":"CELLxGENE held-out (20%)", "Publication":"Nature Methods 2024 — Wang et al.", "GitHub":"github.com/bowang-lab/scGPT", "Status":"Active", "Compliance hold":"false" }},
+  { id:"model_geneformer", label:"Geneformer v2\n(Pan-tissue FM)", type:"Model",
+    detail:{ "Version":"v2.0", "Architecture":"BERT-style transformer, ~10M params", "Training cells":"~29.9M single-cell transcriptomes", "Cell-type F1 (macro)":"0.92", "Gene network AUROC":"0.91", "Eval set":"Independent held-out cohort", "Publication":"Nature 2023 — Theodoris et al.", "GitHub":"huggingface.co/ctheodoris/Geneformer", "Status":"Active", "Compliance hold":"false" }},
 
-  { id:"task_celltype",  label:"Cell-type\nClassification",  type:"DownstreamTask",
-    detail:{ "Task":"Classification", "Model":"scFM-T1D v1", "Description":"Identify , , , ductal cell types in pancreatic islet scRNA-seq", "Status":"Active" }},
-  { id:"task_deconv",    label:"Islet\nDeconvolution",       type:"DownstreamTask",
-    detail:{ "Task":"Deconvolution", "Model":"scFM-T1D v1", "Description":"Decompose bulk RNA-seq into cell-type fractions", "Status":"Active" }},
-  { id:"task_eqtl",      label:"eQTL\nPrediction",          type:"DownstreamTask",
-    detail:{ "Task":"Regression / association", "Model":"Genomic FM v1", "Description":"Predict eQTLs across islet cell types", "Status":"Active" }},
-  { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
-    detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
-  { id:"1ea9c376", label:"Raw BioBank Data", type:"RawData",
-    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001", "Connections":"USED scATAC QC Pipeline v2.0" }},
+  // --- MODEL CARDS (2 nodes) ---
+  { id:"mc_scgpt", label:"Model Card\n(scGPT v1)", type:"ModelCard",
+    detail:{ "Standard":"Model Cards (FAccT 2019)", "Format":"JSON-LD", "GitHub":"github.com/bowang-lab/scGPT/model-card.jsonld", "Author":"Wang et al. / University of Toronto", "Linked dataset cards":"HCA Heart v1.0, HLCA v2.0, HCA Brain v1.0", "Intended use":"Pan-tissue cell-type annotation, perturbation prediction", "Status":"Published" }},
+  { id:"mc_geneformer", label:"Model Card\n(Geneformer v2)", type:"ModelCard",
+    detail:{ "Standard":"Model Cards (FAccT 2019)", "Format":"JSON-LD", "GitHub":"huggingface.co/ctheodoris/Geneformer/model-card.jsonld", "Author":"Theodoris et al. / Gladstone Institutes", "Linked dataset cards":"HCA Heart v1.0, HLCA v2.0, HCA Brain v1.0", "Intended use":"Gene network inference, disease gene prioritization", "Status":"Published" }},
+
+  // --- DOWNSTREAM TASKS (4 nodes) ---
+  { id:"task_celltype_pan",   label:"Pan-tissue\nCell-type Classification", type:"DownstreamTask",
+    detail:{ "Task":"Classification", "Model":"scGPT v1", "Description":"Classify cell types across 30+ tissues using pan-tissue foundation model embeddings", "Status":"Active" }},
+  { id:"task_perturbation",   label:"Perturbation\nResponse Prediction",    type:"DownstreamTask",
+    detail:{ "Task":"Regression", "Model":"scGPT v1", "Description":"Predict transcriptomic response to genetic or chemical perturbations", "Status":"Active" }},
+  { id:"task_gene_network",   label:"Gene Network\nInference",              type:"DownstreamTask",
+    detail:{ "Task":"Graph inference", "Model":"Geneformer v2", "Description":"Infer gene regulatory networks from single-cell expression profiles", "Status":"Active" }},
+  { id:"task_disease_gene",   label:"Disease Gene\nPrioritization",         type:"DownstreamTask",
+    detail:{ "Task":"Ranking", "Model":"Geneformer v2", "Description":"Rank candidate disease genes using chromatin and expression context", "Status":"Active" }},
 ];
 
 export const EDGES = [
-  { source:"raw_scrna",  target:"qc_scrna",      label:"USED" },
-  { source:"raw_atac",   target:"qc_atac",        label:"USED" },
-  { source:"raw_wgs",    target:"qc_wgs",         label:"USED" },
-  { source:"qc_scrna",   target:"proc_scrna",     label:"WAS_GENERATED_BY" },
-  { source:"qc_atac",    target:"proc_atac",      label:"WAS_GENERATED_BY" },
-  { source:"qc_wgs",     target:"proc_wgs",       label:"WAS_GENERATED_BY" },
-  { source:"proc_scrna", target:"dc_scrna",       label:"DOCUMENTED_BY" },
-  { source:"proc_atac",  target:"dc_atac",         label:"DOCUMENTED_BY" },
-  { source:"proc_wgs",   target:"dc_wgs",          label:"DOCUMENTED_BY" },
-  { source:"proc_scrna", target:"model_scfm",    label:"TRAINED_ON",
-    train:{ "Model version":"scFM-T1D v1.0", "Architecture":"scGPT 70M params", "Epochs":"100", "Batch size":"512", "GPU":"8 A100 80GB", "Cluster":"Lighthouse HPC", "SLURM Job":"99887766", "Script Hash":"sha256:e6f7a8...", "GitHub":"github.com/mai-t1d/pipelines/scfm-pretrain", "Training date":"2025-11-03", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
-  { source:"proc_scrna", target:"model_genomic", label:"TRAINED_ON",
-    train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Epochs":"80", "Batch size":"256", "Modality":"scRNA-seq (one of 3)", "GPU":"16 A100 80GB", "Cluster":"Lighthouse HPC", "SLURM Job":"99887800", "Script Hash":"sha256:f7g8h9...", "GitHub":"github.com/mai-t1d/pipelines/genomic-fm", "Training date":"2025-12-01", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
-  { source:"proc_atac",  target:"model_genomic", label:"TRAINED_ON",
-    train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"scATAC-seq (one of 3)", "SLURM Job":"99887800", "Training date":"2025-12-01", "Executor":"Kai Liu" }},
-  { source:"proc_wgs",   target:"model_genomic", label:"TRAINED_ON",
-    train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"WGS (one of 3)", "SLURM Job":"99887800", "Training date":"2025-12-01", "Executor":"Kai Liu" }},
-  { source:"model_scfm",    target:"mc_scfm",       label:"DOCUMENTED_BY" },
-  { source:"model_genomic", target:"mc_genomic",    label:"DOCUMENTED_BY" },
-  { source:"mc_scfm",    target:"dc_scrna",  label:"LINKED_TO" },
-  { source:"mc_genomic", target:"dc_scrna",  label:"LINKED_TO" },
-  { source:"mc_genomic", target:"dc_atac",   label:"LINKED_TO" },
-  { source:"mc_genomic", target:"dc_wgs",    label:"LINKED_TO" },
-  { source:"model_scfm",    target:"task_celltype",  label:"ENABLES" },
-  { source:"model_scfm",    target:"task_deconv",    label:"ENABLES" },
-  { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
-  { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
+  // Raw data → QC pipeline
+  { source:"raw_hca_heart", target:"qc_census", label:"USED" },
+  { source:"raw_hca_lung",  target:"qc_census", label:"USED" },
+  { source:"raw_hca_brain", target:"qc_census", label:"USED" },
+
+  // QC pipeline → processed atlases
+  { source:"qc_census", target:"proc_hca_heart", label:"WAS_GENERATED_BY" },
+  { source:"qc_census", target:"proc_hca_lung",  label:"WAS_GENERATED_BY" },
+  { source:"qc_census", target:"proc_hca_brain", label:"WAS_GENERATED_BY" },
+
+  // Processed atlases → dataset cards
+  { source:"proc_hca_heart", target:"dc_hca_heart", label:"DOCUMENTED_BY" },
+  { source:"proc_hca_lung",  target:"dc_hca_lung",  label:"DOCUMENTED_BY" },
+  { source:"proc_hca_brain", target:"dc_hca_brain", label:"DOCUMENTED_BY" },
+
+  // Processed atlases → models (TRAINED_ON)
+  { source:"proc_hca_heart", target:"model_scgpt", label:"TRAINED_ON",
+    train:{ "Model version":"scGPT v1.0", "Architecture":"Transformer ~51M params", "Tissue":"Heart (one of 3)", "N_Cells":"~33M total", "GPU":"8 A100 80GB", "Cluster":"Vector Institute HPC", "Training date":"2023-08-01", "Executor":"Wang et al.", "Institution":"University of Toronto", "Publication":"Nature Methods 2024" }},
+  { source:"proc_hca_lung",  target:"model_scgpt", label:"TRAINED_ON",
+    train:{ "Model version":"scGPT v1.0", "Architecture":"Transformer ~51M params", "Tissue":"Lung (one of 3)", "N_Cells":"~33M total", "GPU":"8 A100 80GB", "Cluster":"Vector Institute HPC", "Training date":"2023-08-01", "Executor":"Wang et al.", "Institution":"University of Toronto", "Publication":"Nature Methods 2024" }},
+  { source:"proc_hca_brain", target:"model_scgpt", label:"TRAINED_ON",
+    train:{ "Model version":"scGPT v1.0", "Architecture":"Transformer ~51M params", "Tissue":"Brain (one of 3)", "N_Cells":"~33M total", "GPU":"8 A100 80GB", "Cluster":"Vector Institute HPC", "Training date":"2023-08-01", "Executor":"Wang et al.", "Institution":"University of Toronto", "Publication":"Nature Methods 2024" }},
+  { source:"proc_hca_heart", target:"model_geneformer", label:"TRAINED_ON",
+    train:{ "Model version":"Geneformer v2.0", "Architecture":"BERT-style ~10M params", "Tissue":"Heart (one of 3)", "N_Cells":"~29.9M total", "Training date":"2023-05-01", "Executor":"Theodoris et al.", "Institution":"Gladstone Institutes", "Publication":"Nature 2023" }},
+  { source:"proc_hca_lung",  target:"model_geneformer", label:"TRAINED_ON",
+    train:{ "Model version":"Geneformer v2.0", "Architecture":"BERT-style ~10M params", "Tissue":"Lung (one of 3)", "N_Cells":"~29.9M total", "Training date":"2023-05-01", "Executor":"Theodoris et al.", "Institution":"Gladstone Institutes", "Publication":"Nature 2023" }},
+  { source:"proc_hca_brain", target:"model_geneformer", label:"TRAINED_ON",
+    train:{ "Model version":"Geneformer v2.0", "Architecture":"BERT-style ~10M params", "Tissue":"Brain (one of 3)", "N_Cells":"~29.9M total", "Training date":"2023-05-01", "Executor":"Theodoris et al.", "Institution":"Gladstone Institutes", "Publication":"Nature 2023" }},
+
+  // Models → model cards
+  { source:"model_scgpt",      target:"mc_scgpt",      label:"DOCUMENTED_BY" },
+  { source:"model_geneformer", target:"mc_geneformer",  label:"DOCUMENTED_BY" },
+
+  // Model cards → dataset cards (LINKED_TO)
+  { source:"mc_scgpt",      target:"dc_hca_heart", label:"LINKED_TO" },
+  { source:"mc_scgpt",      target:"dc_hca_lung",  label:"LINKED_TO" },
+  { source:"mc_scgpt",      target:"dc_hca_brain", label:"LINKED_TO" },
+  { source:"mc_geneformer", target:"dc_hca_heart", label:"LINKED_TO" },
+  { source:"mc_geneformer", target:"dc_hca_lung",  label:"LINKED_TO" },
+  { source:"mc_geneformer", target:"dc_hca_brain", label:"LINKED_TO" },
+
+  // Models → downstream tasks (ENABLES)
+  { source:"model_scgpt",      target:"task_celltype_pan", label:"ENABLES" },
+  { source:"model_scgpt",      target:"task_perturbation", label:"ENABLES" },
+  { source:"model_geneformer", target:"task_gene_network", label:"ENABLES" },
+  { source:"model_geneformer", target:"task_disease_gene", label:"ENABLES" },
 ];
-
-
