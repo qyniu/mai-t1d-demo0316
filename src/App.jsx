@@ -20,6 +20,7 @@ const EDGE_STYLE = {
   "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
   "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
   "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
+  "HAD_MEMBER":      { color:"#06b6d4", dash:"2,2",  width:1.2 },
 };
 
 const EDGE_LEGEND = [
@@ -29,6 +30,7 @@ const EDGE_LEGEND = [
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
   { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
   { key:"ENABLES",          label:"ENABLES" },
+  { key:"HAD_MEMBER",       label:"HAD_MEMBER" },
 ];
 
 //  NODES 
@@ -1478,6 +1480,8 @@ export default function App() {
     </PresentationCtx.Provider>
   );
 }
+
+
 
 
 
