@@ -1,4 +1,5 @@
 ﻿import { HPAP_DONOR_NODES } from "./hpapDonorNodes";
+import { BULK_ATAC_NODES, BULK_ATAC_HAD_MEMBER_EDGES } from "./bulkAtacNodes";
 
 export const NODES = [
   { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
@@ -48,6 +49,7 @@ export const NODES = [
   { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
     detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
   ...HPAP_DONOR_NODES,
+  ...BULK_ATAC_NODES,
 ];
 
 export const EDGES = [
@@ -78,7 +80,10 @@ export const EDGES = [
   { source:"model_scfm",    target:"task_deconv",    label:"ENABLES" },
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
+  ...BULK_ATAC_HAD_MEMBER_EDGES,
 ];
+
+
 
 
 
