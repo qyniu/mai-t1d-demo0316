@@ -1,4 +1,4 @@
-export const BULK_ATAC_NODES = [
+﻿export const BULK_ATAC_NODES = [
   {
     "id": "sample_hpap_001_bulk_atac_alpha_0001",
     "label": "HPAP-001 Bulk ATAC-seq\nalpha",
@@ -952,3 +952,4 @@ export const BULK_ATAC_COHORT_MEMBER_EDGES = BULK_ATAC_NODES.map((node) => ({
   target: node.id,
   label: "HAD_MEMBER",
 }));
+

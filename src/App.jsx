@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState, useCallback } from "react";
+﻿import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import * as d3 from "d3";
 import { NODES, EDGES } from "./graphData";
 
@@ -39,6 +39,11 @@ const EDGE_LEGEND = [
 //  HELPERS: safe edge id extraction 
 const edgeSrcId = e => typeof e.source === "object" ? e.source.id : e.source;
 const edgeTgtId = e => typeof e.target === "object" ? e.target.id : e.target;
+const normalizeLabel = (label = "") => String(label).replace(/\\n/g, "\n");
+const labelSingleLine = (label = "") => normalizeLabel(label).replace(/\n/g, " ");
+const isDonorNode = id => String(id).startsWith("donor_");
+const isSampleNode = id => String(id).startsWith("sample_");
+const isCohortNode = id => String(id).startsWith("cohort_");
 
 //  GRAPH MODES 
 const GRAPH_MODES = {
@@ -551,7 +556,7 @@ function ImpactView() {
               <span style={{ fontSize:p?18:16 }}>{t.icon}</span>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:p?11:9, fontWeight:700, color:t.text, textTransform:"uppercase", letterSpacing:"0.08em" }}>{t.label}</div>
-                <div style={{ fontSize:p?13.5:11.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>{node.label.replace("\n"," ")}</div>
+                <div style={{ fontSize:p?13.5:11.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>{labelSingleLine(node.label)}</div>
               </div>
               {isTrig  && <span style={{ fontSize:p?11:9, padding:"2px 8px", borderRadius:4, background:"#fef3c7", border:"1px solid #f59e0b", color:"#92400e", fontWeight:700, fontFamily:"monospace", flexShrink:0 }}>TRIGGER</span>}
               {isOut && !isTrig && <span style={{ fontSize:p?11:9, padding:"2px 8px", borderRadius:4, background:"#ffe4e6", border:"1px solid #f43f5e", color:"#9f1239", fontWeight:700, fontFamily:"monospace", flexShrink:0 }}>OUTDATED</span>}
@@ -687,6 +692,31 @@ function GraphView({ graphMode, highlightLinked }) {
   const [size, setSize]         = useState({w:900,h:600});
   const [selected, setSelected] = useState(null);
   const [selEdge,  setSelEdge]  = useState(null);
+  const [expandedCohorts, setExpandedCohorts] = useState(new Set());
+  const [visibleNodeCount, setVisibleNodeCount] = useState(0);
+
+  const visIds = useMemo(() => {
+    const baseIds = new Set(GRAPH_MODES[graphMode].ids);
+    if (graphMode !== "full") return baseIds;
+
+    const visible = new Set([...baseIds].filter(id => !isDonorNode(id) && !isSampleNode(id)));
+    for (const cohortId of expandedCohorts) {
+      if (!baseIds.has(cohortId)) continue;
+      visible.add(cohortId);
+
+      const sampleIds = EDGES
+        .filter(e => e.label === "HAD_MEMBER" && edgeSrcId(e) === cohortId && isSampleNode(edgeTgtId(e)))
+        .map(e => edgeTgtId(e));
+
+      for (const sampleId of sampleIds) {
+        visible.add(sampleId);
+        EDGES
+          .filter(e => e.label === "HAD_MEMBER" && edgeTgtId(e) === sampleId && isDonorNode(edgeSrcId(e)))
+          .forEach(e => visible.add(edgeSrcId(e)));
+      }
+    }
+    return visible;
+  }, [graphMode, expandedCohorts]);
 
   useEffect(()=>{
     if(!wrapRef.current) return;
@@ -695,15 +725,19 @@ function GraphView({ graphMode, highlightLinked }) {
   },[]);
 
   useEffect(()=>{
+    setExpandedCohorts(new Set());
     setSelected(null);
     setSelEdge(null);
+  }, [graphMode]);
+
+  useEffect(()=>{
     if(!svgRef.current) return;
     const{w,h}=size;
     const svg=d3.select(svgRef.current); svg.selectAll("*").remove();
 
-    const visIds=GRAPH_MODES[graphMode].ids;
-    const nodes=NODES.filter(n=>visIds.includes(n.id)).map(n=>({...n}));
-    const edges=EDGES.filter(e=>visIds.includes(e.source)&&visIds.includes(e.target)).map(e=>({...e}));
+    const nodes=NODES.filter(n=>visIds.has(n.id)).map(n=>({...n}));
+    const edges=EDGES.filter(e=>visIds.has(edgeSrcId(e))&&visIds.has(edgeTgtId(e))).map(e=>({...e}));
+    setVisibleNodeCount(nodes.length);
 
     const defs=svg.append("defs");
     const pat=defs.append("pattern").attr("id","grid").attr("width",30).attr("height",30).attr("patternUnits","userSpaceOnUse");
@@ -737,7 +771,19 @@ function GraphView({ graphMode, highlightLinked }) {
 
     const nG=g.append("g").selectAll(".ng").data(nodes).enter().append("g").attr("class","ng").style("cursor","pointer")
       .call(d3.drag().on("start",(e,d)=>{if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;}).on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;}).on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}))
-      .on("click",(e,d)=>{e.stopPropagation();setSelected(prev=>prev?.id===d.id?null:d);setSelEdge(null);});
+      .on("click",(e,d)=>{
+        e.stopPropagation();
+        if (graphMode==="full" && isCohortNode(d.id)) {
+          setExpandedCohorts(prev=>{
+            const next = new Set(prev);
+            if (next.has(d.id)) next.delete(d.id);
+            else next.add(d.id);
+            return next;
+          });
+        }
+        setSelected(prev=>prev?.id===d.id?null:d);
+        setSelEdge(null);
+      });
 
     nG.append("rect").attr("x",-NW/2).attr("y",-NH/2).attr("width",NW).attr("height",NH).attr("rx",8)
       .attr("fill",d=>TYPE[d.type].bg).attr("stroke",d=>TYPE[d.type].border).attr("stroke-width",1.8).attr("filter","url(#shadow)");
@@ -745,7 +791,7 @@ function GraphView({ graphMode, highlightLinked }) {
     nG.append("rect").attr("x",-NW/2).attr("y",-NH/2+3).attr("width",NW).attr("height",2).attr("fill",d=>TYPE[d.type].border);
     nG.append("text").attr("text-anchor","middle").attr("y",-8).attr("font-size",13).attr("pointer-events","none").text(d=>TYPE[d.type].icon);
     nG.each(function(d){
-      const lines=d.label.split("\n");
+      const lines=normalizeLabel(d.label).split("\n");
       const t=d3.select(this).append("text").attr("text-anchor","middle").attr("font-size",p?11:9).attr("font-weight","700").attr("font-family","Georgia,serif").attr("fill",TYPE[d.type].text).attr("pointer-events","none");
       lines.forEach((l,i)=>t.append("tspan").attr("x",0).attr("dy",i===0?9:11).text(l));
     });
@@ -765,7 +811,7 @@ function GraphView({ graphMode, highlightLinked }) {
     });
     svg.on("click",()=>{ setSelected(null); setSelEdge(null); });
     return()=>sim.stop();
-  },[size,graphMode,p]);
+  },[size,graphMode,p,visIds]);
 
   // FIX: selection highlighting + LINKED_TO highlight mode
   useEffect(()=>{
@@ -834,7 +880,7 @@ function GraphView({ graphMode, highlightLinked }) {
                 <div>
                   <div style={{ fontSize:p?10.5:8.5, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"#5b21b6", marginBottom:2 }}>Training Run ?edge metadata</div>
                   <div style={{ fontSize:p?13:11, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>
-                    {srcNode?.label.replace("\n"," ")} ?{tgtNode?.label.replace("\n"," ")}
+                    {labelSingleLine(srcNode?.label)} ?{labelSingleLine(tgtNode?.label)}
                   </div>
                 </div>
               </div>
@@ -861,7 +907,7 @@ function GraphView({ graphMode, highlightLinked }) {
               <span style={{ fontSize:24 }}>{TYPE[selected.type].icon}</span>
               <div>
                 <div style={{ fontSize:p?10.5:8.5, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:TYPE[selected.type].text, marginBottom:2 }}>{TYPE[selected.type].label}</div>
-                <div style={{ fontSize:p?14.5:12.5, fontWeight:700, color:"#0f172a", lineHeight:1.3, fontFamily:"Georgia,serif" }}>{selected.label?.replace("\n"," ")}</div>
+                <div style={{ fontSize:p?14.5:12.5, fontWeight:700, color:"#0f172a", lineHeight:1.3, fontFamily:"Georgia,serif" }}>{labelSingleLine(selected.label)}</div>
               </div>
             </div>
             <div style={{ fontSize:p?11:9, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:7 }}>Properties</div>
@@ -888,7 +934,7 @@ function GraphView({ graphMode, highlightLinked }) {
                       <div key={i} onClick={()=>setSelected(other)} style={{ display:"flex", alignItems:"center", gap:6, background:"#f8fafc", border:`1px solid ${ec}44`, borderRadius:5, padding:"5px 8px", cursor:"pointer" }}>
                         <span style={{ color:ec, fontStyle:"italic", fontSize:p?10:8, fontWeight:700, flexShrink:0 }}>{dir} {e.label}</span>
                         <span style={{ fontSize:13 }}>{other&&TYPE[other.type].icon}</span>
-                        <span style={{ color:"#374151", fontSize:p?12.5:10.5, fontWeight:600, fontFamily:"Georgia,serif" }}>{other?.label.replace("\n"," ")}</span>
+                        <span style={{ color:"#374151", fontSize:p?12.5:10.5, fontWeight:600, fontFamily:"Georgia,serif" }}>{labelSingleLine(other?.label)}</span>
                       </div>
                     );
                   })}
@@ -904,7 +950,7 @@ function GraphView({ graphMode, highlightLinked }) {
             <div style={{ marginTop:12, padding:"10px 14px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontSize:p?12:10, color:"#374151", lineHeight:1.8, textAlign:"left", fontFamily:"Georgia,serif" }}>
               <strong>Showing</strong><br/>
               {GRAPH_MODES[graphMode].label}<br/>
-              <span style={{ fontFamily:"monospace", fontSize:p?11.5:9.5 }}>{GRAPH_MODES[graphMode].ids.length} nodes visible</span>
+              <span style={{ fontFamily:"monospace", fontSize:p?11.5:9.5 }}>{visibleNodeCount} nodes visible</span>
             </div>
           </div>
         )}
@@ -923,30 +969,30 @@ function queryGraph(intent, params) {
         const node = NODES.find(n=>n.id===edgeSrcId(e));
         return { node, trainMeta: e.train };
       }).filter(x=>x.node);
-      return { rows: datasets.map(d=>({ id:d.node.id, label:d.node.label.replace("\n"," "), type:d.node.type, trainMeta:d.trainMeta })) };
+      return { rows: datasets.map(d=>({ id:d.node.id, label:labelSingleLine(d.node.label), type:d.node.type, trainMeta:d.trainMeta })) };
     }
     case "models_for_dataset": {
       const datasetId = params.datasetId;
       const trainEdges = EDGES.filter(e => e.label==="TRAINED_ON" && edgeSrcId(e)===datasetId);
       const models = trainEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
-      return { rows: models.map(m=>({ id:m.id, label:m.label.replace("\n"," "), type:m.type, detail:m.detail })) };
+      return { rows: models.map(m=>({ id:m.id, label:labelSingleLine(m.label), type:m.type, detail:m.detail })) };
     }
     case "compliance_status": {
       const models = NODES.filter(n=>n.type==="Model");
-      return { rows: models.map(m=>({ id:m.id, label:m.label.replace("\n"," "), compliance_hold:m.detail["Compliance hold"], status:m.detail["Status"] })) };
+      return { rows: models.map(m=>({ id:m.id, label:labelSingleLine(m.label), compliance_hold:m.detail["Compliance hold"], status:m.detail["Status"] })) };
     }
     case "pipeline_for_dataset": {
       const datasetId = params.datasetId;
       const genEdge = EDGES.find(e => e.label==="WAS_GENERATED_BY" && edgeTgtId(e)===datasetId);
       if (!genEdge) return { rows:[] };
       const pipeline = NODES.find(n=>n.id===edgeSrcId(genEdge));
-      return { rows: pipeline ? [{ id:pipeline.id, label:pipeline.label.replace("\n"," "), detail:pipeline.detail }] : [] };
+      return { rows: pipeline ? [{ id:pipeline.id, label:labelSingleLine(pipeline.label), detail:pipeline.detail }] : [] };
     }
     case "downstream_tasks": {
       const modelId = params.modelId;
       const enableEdges = EDGES.filter(e => e.label==="ENABLES" && edgeSrcId(e)===modelId);
       const tasks = enableEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
-      return { rows: tasks.map(t=>({ id:t.id, label:t.label.replace("\n"," "), detail:t.detail })) };
+      return { rows: tasks.map(t=>({ id:t.id, label:labelSingleLine(t.label), detail:t.detail })) };
     }
     case "provenance_chain": {
       const nodeId = params.nodeId;
@@ -954,7 +1000,7 @@ function queryGraph(intent, params) {
       const traverse = (id) => {
         if (visited.has(id)) return; visited.add(id);
         const node = NODES.find(n=>n.id===id); if(!node) return;
-        chain.push({ id, label:node.label.replace("\n"," "), type:node.type });
+        chain.push({ id, label:labelSingleLine(node.label), type:node.type });
         EDGES.forEach(e => {
           if (edgeTgtId(e)===id && ["USED","WAS_GENERATED_BY","TRAINED_ON"].includes(e.label)) traverse(edgeSrcId(e));
         });
@@ -966,11 +1012,11 @@ function queryGraph(intent, params) {
       const mcId = params.mcId;
       const linkedEdges = EDGES.filter(e => e.label==="LINKED_TO" && edgeSrcId(e)===mcId);
       const cards = linkedEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
-      return { rows: cards.map(c=>({ id:c.id, label:c.label.replace("\n"," "), detail:c.detail })) };
+      return { rows: cards.map(c=>({ id:c.id, label:labelSingleLine(c.label), detail:c.detail })) };
     }
     case "node_detail": {
-      const node = NODES.find(n=>n.id===params.nodeId || n.label.replace("\n"," ").toLowerCase().includes(params.query?.toLowerCase()));
-      return { rows: node ? [{ id:node.id, label:node.label.replace("\n"," "), type:node.type, detail:node.detail }] : [] };
+      const node = NODES.find(n=>n.id===params.nodeId || labelSingleLine(n.label).toLowerCase().includes(params.query?.toLowerCase()));
+      return { rows: node ? [{ id:node.id, label:labelSingleLine(node.label), type:node.type, detail:node.detail }] : [] };
     }
     default:
       return { rows:[], error:"Unknown intent" };
@@ -985,7 +1031,7 @@ The graph tracks W3C PROV provenance from raw biobank data to foundation models.
 NODE TYPES: RawData, Pipeline, ProcessedData, DatasetCard, Model, ModelCard, DownstreamTask
 
 NODES (id ?label):
-${NODES.map(n=>`  ${n.id}: ${n.label.replace("\n"," ")} [${n.type}]`).join("\n")}
+${NODES.map(n=>`  ${n.id}: ${labelSingleLine(n.label)} [${n.type}]`).join("\n")}
 
 EDGES (source ?target [label]):
 ${EDGES.map(e=>`  ${e.source} ?${e.target} [${e.label}]${e.train?` {date:${e.train["Training date"]},executor:${e.train["Executor"]}}`:""}`).join("\n")}
@@ -1480,6 +1526,8 @@ export default function App() {
     </PresentationCtx.Provider>
   );
 }
+
+
 
 
 

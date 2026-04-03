@@ -1,7 +1,7 @@
-export const BULK_RNA_NODES = [
+﻿export const BULK_RNA_NODES = [
   {
     "id": "sample_hpap_001_bulk_rna_alpha_0001",
-    "label": "HPAP-001 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-001 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-001",
@@ -16,7 +16,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_001_bulk_rna_unknown_cell_0002",
-    "label": "HPAP-001 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-001 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-001",
@@ -31,7 +31,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_002_bulk_rna_unknown_cell_0003",
-    "label": "HPAP-002 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-002 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-002",
@@ -46,7 +46,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_003_bulk_rna_alpha_0004",
-    "label": "HPAP-003 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-003 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-003",
@@ -61,7 +61,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_003_bulk_rna_unknown_cell_0005",
-    "label": "HPAP-003 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-003 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-003",
@@ -76,7 +76,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_004_bulk_rna_alpha_0006",
-    "label": "HPAP-004 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-004 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-004",
@@ -91,7 +91,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_004_bulk_rna_unknown_cell_0007",
-    "label": "HPAP-004 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-004 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-004",
@@ -106,7 +106,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_005_bulk_rna_unknown_cell_0008",
-    "label": "HPAP-005 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-005 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-005",
@@ -121,7 +121,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_006_bulk_rna_alpha_0009",
-    "label": "HPAP-006 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-006 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-006",
@@ -136,7 +136,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_006_bulk_rna_unknown_cell_0010",
-    "label": "HPAP-006 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-006 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-006",
@@ -151,7 +151,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_007_bulk_rna_alpha_0011",
-    "label": "HPAP-007 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-007 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-007",
@@ -166,7 +166,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_008_bulk_rna_alpha_0012",
-    "label": "HPAP-008 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-008 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-008",
@@ -181,7 +181,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_009_bulk_rna_alpha_0013",
-    "label": "HPAP-009 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-009 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-009",
@@ -196,7 +196,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_009_bulk_rna_unknown_cell_0014",
-    "label": "HPAP-009 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-009 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-009",
@@ -211,7 +211,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_010_bulk_rna_alpha_0015",
-    "label": "HPAP-010 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-010 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-010",
@@ -226,7 +226,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_010_bulk_rna_unknown_cell_0016",
-    "label": "HPAP-010 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-010 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-010",
@@ -241,7 +241,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_011_bulk_rna_unknown_cell_0017",
-    "label": "HPAP-011 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-011 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-011",
@@ -256,7 +256,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_012_bulk_rna_alpha_0018",
-    "label": "HPAP-012 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-012 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-012",
@@ -271,7 +271,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_013_bulk_rna_alpha_0019",
-    "label": "HPAP-013 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-013 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-013",
@@ -286,7 +286,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_014_bulk_rna_alpha_0020",
-    "label": "HPAP-014 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-014 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-014",
@@ -301,7 +301,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_014_bulk_rna_unknown_cell_0021",
-    "label": "HPAP-014 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-014 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-014",
@@ -316,7 +316,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_017_bulk_rna_alpha_0022",
-    "label": "HPAP-017 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-017 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-017",
@@ -331,7 +331,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_017_bulk_rna_unknown_cell_0023",
-    "label": "HPAP-017 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-017 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-017",
@@ -346,7 +346,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_018_bulk_rna_alpha_0024",
-    "label": "HPAP-018 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-018 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-018",
@@ -361,7 +361,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_018_bulk_rna_beta_0025",
-    "label": "HPAP-018 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-018 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-018",
@@ -376,7 +376,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_018_bulk_rna_unknown_cell_0026",
-    "label": "HPAP-018 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-018 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-018",
@@ -391,7 +391,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_019_bulk_rna_alpha_0027",
-    "label": "HPAP-019 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-019 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-019",
@@ -406,7 +406,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_019_bulk_rna_beta_0028",
-    "label": "HPAP-019 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-019 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-019",
@@ -421,7 +421,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_022_bulk_rna_alpha_0029",
-    "label": "HPAP-022 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-022 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-022",
@@ -436,7 +436,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_022_bulk_rna_beta_0030",
-    "label": "HPAP-022 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-022 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-022",
@@ -451,7 +451,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_026_bulk_rna_alpha_0031",
-    "label": "HPAP-026 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-026 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-026",
@@ -466,7 +466,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_029_bulk_rna_alpha_0032",
-    "label": "HPAP-029 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-029 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-029",
@@ -481,7 +481,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_029_bulk_rna_unknown_cell_0033",
-    "label": "HPAP-029 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-029 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-029",
@@ -496,7 +496,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_035_bulk_rna_alpha_0034",
-    "label": "HPAP-035 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-035 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-035",
@@ -511,7 +511,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_035_bulk_rna_beta_0035",
-    "label": "HPAP-035 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-035 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-035",
@@ -526,7 +526,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_036_bulk_rna_beta_0036",
-    "label": "HPAP-036 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-036 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-036",
@@ -541,7 +541,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_038_bulk_rna_alpha_0037",
-    "label": "HPAP-038 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-038 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-038",
@@ -556,7 +556,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_038_bulk_rna_beta_0038",
-    "label": "HPAP-038 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-038 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-038",
@@ -571,7 +571,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_040_bulk_rna_alpha_0039",
-    "label": "HPAP-040 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-040 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-040",
@@ -586,7 +586,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_040_bulk_rna_beta_0040",
-    "label": "HPAP-040 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-040 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-040",
@@ -601,7 +601,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_045_bulk_rna_alpha_0041",
-    "label": "HPAP-045 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-045 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-045",
@@ -616,7 +616,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_045_bulk_rna_beta_0042",
-    "label": "HPAP-045 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-045 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-045",
@@ -631,7 +631,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_045_bulk_rna_unknown_cell_0043",
-    "label": "HPAP-045 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-045 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-045",
@@ -646,7 +646,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_047_bulk_rna_unknown_cell_0044",
-    "label": "HPAP-047 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-047 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-047",
@@ -661,7 +661,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_049_bulk_rna_alpha_0045",
-    "label": "HPAP-049 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-049 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-049",
@@ -676,7 +676,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_049_bulk_rna_unknown_cell_0046",
-    "label": "HPAP-049 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-049 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-049",
@@ -691,7 +691,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_051_bulk_rna_alpha_0047",
-    "label": "HPAP-051 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-051 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-051",
@@ -706,7 +706,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_051_bulk_rna_unknown_cell_0048",
-    "label": "HPAP-051 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-051 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-051",
@@ -721,7 +721,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_052_bulk_rna_alpha_0049",
-    "label": "HPAP-052 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-052 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-052",
@@ -736,7 +736,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_052_bulk_rna_unknown_cell_0050",
-    "label": "HPAP-052 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-052 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-052",
@@ -751,7 +751,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_053_bulk_rna_alpha_0051",
-    "label": "HPAP-053 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-053 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-053",
@@ -766,7 +766,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_053_bulk_rna_beta_0052",
-    "label": "HPAP-053 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-053 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-053",
@@ -781,7 +781,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_053_bulk_rna_unknown_cell_0053",
-    "label": "HPAP-053 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-053 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-053",
@@ -796,7 +796,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_054_bulk_rna_alpha_0054",
-    "label": "HPAP-054 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-054 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-054",
@@ -811,7 +811,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_054_bulk_rna_beta_0055",
-    "label": "HPAP-054 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-054 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-054",
@@ -826,7 +826,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_056_bulk_rna_alpha_0056",
-    "label": "HPAP-056 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-056 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-056",
@@ -841,7 +841,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_056_bulk_rna_unknown_cell_0057",
-    "label": "HPAP-056 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-056 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-056",
@@ -856,7 +856,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_057_bulk_rna_alpha_0058",
-    "label": "HPAP-057 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-057 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-057",
@@ -871,7 +871,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_057_bulk_rna_beta_0059",
-    "label": "HPAP-057 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-057 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-057",
@@ -886,7 +886,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_059_bulk_rna_unknown_cell_0060",
-    "label": "HPAP-059 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-059 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-059",
@@ -901,7 +901,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_062_bulk_rna_unknown_cell_0061",
-    "label": "HPAP-062 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-062 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-062",
@@ -916,7 +916,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_063_bulk_rna_unknown_cell_0062",
-    "label": "HPAP-063 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-063 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-063",
@@ -931,7 +931,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_064_bulk_rna_unknown_cell_0063",
-    "label": "HPAP-064 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-064 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-064",
@@ -946,7 +946,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_066_bulk_rna_unknown_cell_0064",
-    "label": "HPAP-066 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-066 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-066",
@@ -961,7 +961,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_067_bulk_rna_alpha_0065",
-    "label": "HPAP-067 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-067 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-067",
@@ -976,7 +976,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_069_bulk_rna_alpha_0066",
-    "label": "HPAP-069 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-069 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-069",
@@ -991,7 +991,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_069_bulk_rna_unknown_cell_0067",
-    "label": "HPAP-069 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-069 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-069",
@@ -1006,7 +1006,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_072_bulk_rna_unknown_cell_0068",
-    "label": "HPAP-072 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-072 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-072",
@@ -1021,7 +1021,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_075_bulk_rna_alpha_0069",
-    "label": "HPAP-075 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-075 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-075",
@@ -1036,7 +1036,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_075_bulk_rna_unknown_cell_0070",
-    "label": "HPAP-075 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-075 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-075",
@@ -1051,7 +1051,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_077_bulk_rna_alpha_0071",
-    "label": "HPAP-077 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-077 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-077",
@@ -1066,7 +1066,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_079_bulk_rna_alpha_0072",
-    "label": "HPAP-079 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-079 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-079",
@@ -1081,7 +1081,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_080_bulk_rna_alpha_0073",
-    "label": "HPAP-080 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-080 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-080",
@@ -1096,7 +1096,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_081_bulk_rna_unknown_cell_0074",
-    "label": "HPAP-081 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-081 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-081",
@@ -1111,7 +1111,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_083_bulk_rna_alpha_0075",
-    "label": "HPAP-083 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-083 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-083",
@@ -1126,7 +1126,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_083_bulk_rna_unknown_cell_0076",
-    "label": "HPAP-083 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-083 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-083",
@@ -1141,7 +1141,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_084_bulk_rna_unknown_cell_0077",
-    "label": "HPAP-084 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-084 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-084",
@@ -1156,7 +1156,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_085_bulk_rna_unknown_cell_0078",
-    "label": "HPAP-085 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-085 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-085",
@@ -1171,7 +1171,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_090_bulk_rna_alpha_0079",
-    "label": "HPAP-090 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-090 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-090",
@@ -1186,7 +1186,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_090_bulk_rna_unknown_cell_0080",
-    "label": "HPAP-090 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-090 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-090",
@@ -1201,7 +1201,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_095_bulk_rna_alpha_0081",
-    "label": "HPAP-095 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-095 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-095",
@@ -1216,7 +1216,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_095_bulk_rna_unknown_cell_0082",
-    "label": "HPAP-095 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-095 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-095",
@@ -1231,7 +1231,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_096_bulk_rna_alpha_0083",
-    "label": "HPAP-096 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-096 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-096",
@@ -1246,7 +1246,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_096_bulk_rna_unknown_cell_0084",
-    "label": "HPAP-096 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-096 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-096",
@@ -1261,7 +1261,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_097_bulk_rna_alpha_0085",
-    "label": "HPAP-097 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-097 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-097",
@@ -1276,7 +1276,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_097_bulk_rna_unknown_cell_0086",
-    "label": "HPAP-097 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-097 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-097",
@@ -1291,7 +1291,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_099_bulk_rna_unknown_cell_0087",
-    "label": "HPAP-099 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-099 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-099",
@@ -1306,7 +1306,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_100_bulk_rna_alpha_0088",
-    "label": "HPAP-100 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-100 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-100",
@@ -1321,7 +1321,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_100_bulk_rna_unknown_cell_0089",
-    "label": "HPAP-100 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-100 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-100",
@@ -1336,7 +1336,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_101_bulk_rna_alpha_0090",
-    "label": "HPAP-101 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-101 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-101",
@@ -1351,7 +1351,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_103_bulk_rna_alpha_0091",
-    "label": "HPAP-103 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-103 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-103",
@@ -1366,7 +1366,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_103_bulk_rna_unknown_cell_0092",
-    "label": "HPAP-103 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-103 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-103",
@@ -1381,7 +1381,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_001_bulk_rna_beta_0093",
-    "label": "HPAP-001 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-001 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-001",
@@ -1396,7 +1396,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_001_bulk_rna_beta_0094",
-    "label": "HPAP-001 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-001 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-001",
@@ -1411,7 +1411,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_002_bulk_rna_alpha_0095",
-    "label": "HPAP-002 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-002 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-002",
@@ -1426,7 +1426,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_003_bulk_rna_beta_0096",
-    "label": "HPAP-003 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-003 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-003",
@@ -1441,7 +1441,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_004_bulk_rna_beta_0097",
-    "label": "HPAP-004 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-004 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-004",
@@ -1456,7 +1456,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_005_bulk_rna_beta_0098",
-    "label": "HPAP-005 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-005 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-005",
@@ -1471,7 +1471,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_006_bulk_rna_beta_0099",
-    "label": "HPAP-006 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-006 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-006",
@@ -1486,7 +1486,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_007_bulk_rna_beta_0100",
-    "label": "HPAP-007 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-007 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-007",
@@ -1501,7 +1501,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_007_bulk_rna_unknown_cell_0101",
-    "label": "HPAP-007 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-007 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-007",
@@ -1516,7 +1516,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_008_bulk_rna_beta_0102",
-    "label": "HPAP-008 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-008 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-008",
@@ -1531,7 +1531,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_009_bulk_rna_beta_0103",
-    "label": "HPAP-009 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-009 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-009",
@@ -1546,7 +1546,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_010_bulk_rna_beta_0104",
-    "label": "HPAP-010 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-010 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-010",
@@ -1561,7 +1561,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_011_bulk_rna_alpha_0105",
-    "label": "HPAP-011 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-011 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-011",
@@ -1576,7 +1576,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_011_bulk_rna_beta_0106",
-    "label": "HPAP-011 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-011 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-011",
@@ -1591,7 +1591,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_012_bulk_rna_unknown_cell_0107",
-    "label": "HPAP-012 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-012 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-012",
@@ -1606,7 +1606,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_012_bulk_rna_beta_0108",
-    "label": "HPAP-012 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-012 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-012",
@@ -1621,7 +1621,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_013_bulk_rna_beta_0109",
-    "label": "HPAP-013 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-013 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-013",
@@ -1636,7 +1636,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_013_bulk_rna_unknown_cell_0110",
-    "label": "HPAP-013 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-013 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-013",
@@ -1651,7 +1651,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_014_bulk_rna_beta_0111",
-    "label": "HPAP-014 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-014 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-014",
@@ -1666,7 +1666,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_015_bulk_rna_alpha_0112",
-    "label": "HPAP-015 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-015 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-015",
@@ -1681,7 +1681,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_015_bulk_rna_beta_0113",
-    "label": "HPAP-015 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-015 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-015",
@@ -1696,7 +1696,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_017_bulk_rna_beta_0114",
-    "label": "HPAP-017 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-017 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-017",
@@ -1711,7 +1711,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_026_bulk_rna_beta_0115",
-    "label": "HPAP-026 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-026 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-026",
@@ -1726,7 +1726,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_026_bulk_rna_unknown_cell_0116",
-    "label": "HPAP-026 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-026 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-026",
@@ -1741,7 +1741,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_036_bulk_rna_alpha_0117",
-    "label": "HPAP-036 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-036 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-036",
@@ -1756,7 +1756,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_036_bulk_rna_unknown_cell_0118",
-    "label": "HPAP-036 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-036 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-036",
@@ -1771,7 +1771,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_047_bulk_rna_alpha_0119",
-    "label": "HPAP-047 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-047 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-047",
@@ -1786,7 +1786,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_047_bulk_rna_beta_0120",
-    "label": "HPAP-047 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-047 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-047",
@@ -1801,7 +1801,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_049_bulk_rna_beta_0121",
-    "label": "HPAP-049 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-049 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-049",
@@ -1816,7 +1816,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_051_bulk_rna_beta_0122",
-    "label": "HPAP-051 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-051 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-051",
@@ -1831,7 +1831,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_052_bulk_rna_beta_0123",
-    "label": "HPAP-052 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-052 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-052",
@@ -1846,7 +1846,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_055_bulk_rna_alpha_0124",
-    "label": "HPAP-055 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-055 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-055",
@@ -1861,7 +1861,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_056_bulk_rna_beta_0125",
-    "label": "HPAP-056 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-056 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-056",
@@ -1876,7 +1876,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_058_bulk_rna_alpha_0126",
-    "label": "HPAP-058 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-058 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-058",
@@ -1891,7 +1891,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_058_bulk_rna_beta_0127",
-    "label": "HPAP-058 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-058 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-058",
@@ -1906,7 +1906,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_059_bulk_rna_alpha_0128",
-    "label": "HPAP-059 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-059 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-059",
@@ -1921,7 +1921,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_066_bulk_rna_alpha_0129",
-    "label": "HPAP-066 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-066 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-066",
@@ -1936,7 +1936,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_067_bulk_rna_beta_0130",
-    "label": "HPAP-067 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-067 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-067",
@@ -1951,7 +1951,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_072_bulk_rna_alpha_0131",
-    "label": "HPAP-072 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-072 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-072",
@@ -1966,7 +1966,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_074_bulk_rna_beta_0132",
-    "label": "HPAP-074 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-074 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-074",
@@ -1981,7 +1981,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_077_bulk_rna_beta_0133",
-    "label": "HPAP-077 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-077 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-077",
@@ -1996,7 +1996,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_079_bulk_rna_beta_0134",
-    "label": "HPAP-079 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-079 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-079",
@@ -2011,7 +2011,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_080_bulk_rna_beta_0135",
-    "label": "HPAP-080 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-080 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-080",
@@ -2026,7 +2026,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_090_bulk_rna_beta_0136",
-    "label": "HPAP-090 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-090 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-090",
@@ -2041,7 +2041,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_091_bulk_rna_alpha_0137",
-    "label": "HPAP-091 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-091 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-091",
@@ -2056,7 +2056,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_092_bulk_rna_alpha_0138",
-    "label": "HPAP-092 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-092 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-092",
@@ -2071,7 +2071,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_092_bulk_rna_beta_0139",
-    "label": "HPAP-092 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-092 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-092",
@@ -2086,7 +2086,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_092_bulk_rna_unknown_cell_0140",
-    "label": "HPAP-092 Bulk RNA-seq\\nPancreas",
+    "label": "HPAP-092 Bulk RNA-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-092",
@@ -2101,7 +2101,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_093_bulk_rna_alpha_0141",
-    "label": "HPAP-093 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-093 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-093",
@@ -2116,7 +2116,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_093_bulk_rna_beta_0142",
-    "label": "HPAP-093 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-093 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-093",
@@ -2131,7 +2131,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_095_bulk_rna_beta_0143",
-    "label": "HPAP-095 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-095 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-095",
@@ -2146,7 +2146,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_097_bulk_rna_beta_0144",
-    "label": "HPAP-097 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-097 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-097",
@@ -2161,7 +2161,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_099_bulk_rna_alpha_0145",
-    "label": "HPAP-099 Bulk RNA-seq\\nalpha",
+    "label": "HPAP-099 Bulk RNA-seq\nalpha",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-099",
@@ -2176,7 +2176,7 @@ export const BULK_RNA_NODES = [
   },
   {
     "id": "sample_hpap_101_bulk_rna_beta_0146",
-    "label": "HPAP-101 Bulk RNA-seq\\nbeta",
+    "label": "HPAP-101 Bulk RNA-seq\nbeta",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-101",
@@ -3668,3 +3668,4 @@ export const BULK_RNA_COHORT_MEMBER_EDGES = [
     "label": "HAD_MEMBER"
   }
 ];
+
