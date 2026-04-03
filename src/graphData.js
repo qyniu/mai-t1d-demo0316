@@ -1,4 +1,6 @@
-﻿export const NODES = [
+﻿import { HPAP_DONOR_NODES } from "./hpapDonorNodes";
+
+export const NODES = [
   { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
     detail:{ "Donor":"HPAP-002", "Modality":"scRNA-seq", "Source":"HPAP / PancDB", "Platform":"10x Genomics Chromium v3", "Lighthouse":"/lighthouse/mai-t1d/raw/scrna/hpap002/", "Portal":"hpap.pmacs.upenn.edu", "Access":"DUA-HPAP-2024-001", "Responsible":"HPAP Consortium / UPenn", "Checksum":"sha256:a1b2c3..." }},
   { id:"raw_atac",   label:"HPAP cohort\nscATAC-seq",     type:"RawData",
@@ -45,6 +47,7 @@
     detail:{ "Task":"Regression / association", "Model":"Genomic FM v1", "Description":"Predict eQTLs across islet cell types", "Status":"Active" }},
   { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
     detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
+  ...HPAP_DONOR_NODES,
 ];
 
 export const EDGES = [
@@ -76,5 +79,7 @@ export const EDGES = [
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
 ];
+
+
 
 
