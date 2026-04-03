@@ -309,7 +309,7 @@ export const BULK_ATAC_NODES = [
   },
   {
     "id": "sample_hpap_035_bulk_atac_unknown_cell_0023",
-    "label": "HPAP-035 Bulk ATAC-seq\nunknown-cell",
+    "label": "HPAP-035 Bulk ATAC-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-035",
@@ -547,7 +547,7 @@ export const BULK_ATAC_NODES = [
   },
   {
     "id": "sample_hpap_063_bulk_atac_unknown_cell_0040",
-    "label": "HPAP-063 Bulk ATAC-seq\nunknown-cell",
+    "label": "HPAP-063 Bulk ATAC-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-063",
@@ -589,7 +589,7 @@ export const BULK_ATAC_NODES = [
   },
   {
     "id": "sample_hpap_066_bulk_atac_unknown_cell_0043",
-    "label": "HPAP-066 Bulk ATAC-seq\nunknown-cell",
+    "label": "HPAP-066 Bulk ATAC-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-066",
@@ -603,7 +603,7 @@ export const BULK_ATAC_NODES = [
   },
   {
     "id": "sample_hpap_067_bulk_atac_unknown_cell_0044",
-    "label": "HPAP-067 Bulk ATAC-seq\nunknown-cell",
+    "label": "HPAP-067 Bulk ATAC-seq\nPancreas",
     "type": "RawData",
     "detail": {
       "Donor": "HPAP-067",
