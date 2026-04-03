@@ -1,0 +1,11 @@
+# Enforce consistent line endings across platforms.
+# Store and check out text files with LF to avoid CRLF/LF churn.
+* text=auto eol=lf
+
+# Treat common binary formats as binary (no EOL normalization).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ico binary

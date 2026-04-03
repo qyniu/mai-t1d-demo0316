@@ -1,0 +1,110 @@
+{
+  "_source": "ENCODE Portal (encodeproject.org) — REST API, fetched 2026-04-03",
+  "_license": "CC0 (public domain)",
+  "_note": "Real metadata for use in graphData.js node detail fields",
+
+  "experiments": {
+    "chipseq": {
+      "accession": "ENCSR785RQR",
+      "assay": "TF ChIP-seq",
+      "target": "JUND",
+      "biosample": "K562 (Homo sapiens cell line, genetically modified via CRISPR targeting CEBPB)",
+      "lab": "Michael Snyder, Stanford",
+      "date_released": "2025-09-27",
+      "replicates": 1,
+      "files": 2,
+      "award_project": "ENCODE",
+      "organism": "Homo sapiens",
+      "portal_url": "encodeproject.org/experiments/ENCSR785RQR/",
+      "description": "JUND ChIP-seq on K562 cells with CRISPR deletion of CEBPB — maps TF binding shift on regulatory element perturbation"
+    },
+    "chipseq_alt": {
+      "accession": "ENCSR054ZMK",
+      "assay": "TF ChIP-seq",
+      "target": "NR2F2",
+      "biosample": "HepG2 (Homo sapiens cell line, shRNA targeting FOXA3)",
+      "lab": "Michael Snyder, Stanford",
+      "organism": "Homo sapiens",
+      "portal_url": "encodeproject.org/experiments/ENCSR054ZMK/"
+    },
+    "atacseq": {
+      "accession": "ENCSR844TIU",
+      "assay": "ATAC-seq",
+      "biosample": "Regulatory T cell — Mus musculus strain C57BL/6NJ",
+      "lab": "Tim Reddy, Duke University",
+      "date_released": "2025-09-30",
+      "replicates": "2 biological × 2 technical",
+      "files": 10,
+      "award_project": "ENCODE",
+      "organism": "Mus musculus",
+      "sequencer": "Illumina NextSeq 500",
+      "assembly": "mm10",
+      "portal_url": "encodeproject.org/experiments/ENCSR844TIU/",
+      "output_types": ["raw fastq", "aligned BAM", "signal bigWig", "narrowPeak calls"]
+    },
+    "rnaseq": {
+      "accession": "ENCSR863GGC",
+      "assay": "total RNA-seq",
+      "biosample": "T-helper 9 cell — Homo sapiens female adult (25 years)",
+      "lab": "John Stamatoyannopoulos, UW",
+      "date_released": "2026-01-26",
+      "replicates": 1,
+      "files": 3,
+      "award_project": "ENCODE",
+      "organism": "Homo sapiens",
+      "assembly": "GRCh38",
+      "portal_url": "encodeproject.org/experiments/ENCSR863GGC/"
+    }
+  },
+
+  "pipelines": {
+    "atacseq_pipeline": {
+      "accession": "ENCPL867PDN",
+      "name": "GGR ATAC-seq pipeline VERSION TR.1",
+      "assay": "ATAC-seq",
+      "lab": "Tim Reddy, Duke University",
+      "status": "released",
+      "software": {
+        "mapping_filtering": ["Bowtie 1.2.3", "Picard 2.14", "Trimmomatic 0.32", "BEDTools 2.26.0"],
+        "peak_calling": ["MACS 2.1.1.20160309"],
+        "quantification": ["BEDTools 2.26.0", "bedGraphToBigWig 4"],
+        "format_conversion": ["bedToBigBed 2.7"]
+      },
+      "portal_url": "encodeproject.org/pipelines/ENCPL867PDN/"
+    },
+    "rnaseq_pipeline": {
+      "accession": "ENCPL280OHK",
+      "name": "Altius Total RNA-seq Pipeline",
+      "version": "1",
+      "assay": "total RNA-seq",
+      "assembly": "GRCh38",
+      "portal_url": "encodeproject.org/pipelines/ENCPL280OHK/"
+    },
+    "chipseq_pipeline_ref": {
+      "accession": "ENCPL436CSM",
+      "name": "CRG ChIP-seq",
+      "assay": "ChIP-seq",
+      "software": ["GEM-Tools", "Picard", "MACS", "Zerone", "bedToBigBed"],
+      "portal_url": "encodeproject.org/pipelines/ENCPL436CSM/"
+    }
+  },
+
+  "reference_model": {
+    "name": "Enformer",
+    "type": "Sequence-to-Function Foundation Model",
+    "architecture": "Transformer with Perceiver (attention pooling)",
+    "params": "~250M",
+    "input": "196 kb genomic sequence (human/mouse)",
+    "output": "5313 human + 1643 mouse genomic tracks",
+    "training_data": "ENCODE + Roadmap Epigenomics (ChIP-seq, ATAC-seq, RNA-seq, DNase-seq peaks)",
+    "publication": "Avsec et al., Nature Methods 2021 — doi:10.1038/s41592-021-01252-x",
+    "github": "github.com/deepmind/deepmind-research/tree/master/enformer",
+    "huggingface": "huggingface.co/EleutherAI/enformer-official-rough",
+    "license": "Apache 2.0",
+    "tasks": ["TF binding prediction", "chromatin accessibility prediction", "gene expression prediction"],
+    "performance": {
+      "gene_expression_pearson_r": "0.854 (vs 0.836 Basenji2)",
+      "CAGE_correlation": "state-of-art at publication (2021)"
+    }
+  }
+}
