@@ -49,7 +49,7 @@ const isCohortNode = id => String(id).startsWith("cohort_");
 const GRAPH_MODES = {
   full:    { label:"Full graph",            ids: NODES.map(n=>n.id) },
   scfm:   { label:"Single-cell FM lineage", ids:["model_scfm","mc_scfm","task_celltype","task_deconv"] },
-  genomic:{ label:"Genomic FM lineage",    ids:["cohort_bulk_rna_seq","qc_bulk_rna","proc_bulk_rna_v1","cohort_bulk_atac_seq","qc_bulk_atac","proc_bulk_atac_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
+  genomic:{ label:"Genomic FM lineage",    ids:["cohort_bulk_rna_seq","qc_bulk_rna","proc_bulk_rna_v1","dc_bulk_rna_v1","cohort_bulk_atac_seq","qc_bulk_atac","proc_bulk_atac_v1","dc_bulk_atac_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
   hpap002:{ label:"HPAP-002 downstream",   ids:["model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"] },
 };
 
@@ -518,7 +518,7 @@ const EVENT_TYPES = [
   { id:"A", label:"Type A ?New data added",            desc:"New donor batch appended to existing dataset" },
 ];
 
-const ORDER = ["cohort_bulk_rna_seq","cohort_bulk_atac_seq","qc_bulk_rna","qc_bulk_atac","proc_bulk_rna_v1","proc_bulk_atac_v1","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"];
+const ORDER = ["cohort_bulk_rna_seq","cohort_bulk_atac_seq","qc_bulk_rna","qc_bulk_atac","proc_bulk_rna_v1","proc_bulk_atac_v1","dc_bulk_rna_v1","dc_bulk_atac_v1","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"];
 
 function ImpactView() {
   const p = usePres();
