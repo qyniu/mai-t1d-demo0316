@@ -50,23 +50,6 @@ export const NODES = [
   ...HPAP_DONOR_NODES,
 ];
 
-
-const DONOR_MODALITY_TO_RAW_NODE = {
-  "scRNA-seq": "raw_scrna",
-  "scATAC-seq": "raw_atac",
-  "WGS": "raw_wgs",
-};
-
-const HAD_MEMBER_EDGES = HPAP_DONOR_NODES.flatMap((donorNode) => {
-  const detail = donorNode.detail || {};
-  return Object.entries(DONOR_MODALITY_TO_RAW_NODE)
-    .filter(([modality]) => String(detail[modality] || "").trim() === "1")
-    .map(([, rawNodeId]) => ({
-      source: rawNodeId,
-      target: donorNode.id,
-      label: "HAD_MEMBER",
-    }));
-});
 export const EDGES = [
   { source:"raw_scrna",  target:"qc_scrna",      label:"USED" },
   { source:"raw_atac",   target:"qc_atac",        label:"USED" },
@@ -95,7 +78,6 @@ export const EDGES = [
   { source:"model_scfm",    target:"task_deconv",    label:"ENABLES" },
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
-  ...HAD_MEMBER_EDGES,
 ];
 
 
