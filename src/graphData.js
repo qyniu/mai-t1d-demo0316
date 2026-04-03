@@ -5,6 +5,12 @@ import {
   BULK_ATAC_COHORT_NODE,
   BULK_ATAC_COHORT_MEMBER_EDGES,
 } from "./bulkAtacNodes";
+import {
+  BULK_RNA_NODES,
+  BULK_RNA_HAD_MEMBER_EDGES,
+  BULK_RNA_COHORT_NODE,
+  BULK_RNA_COHORT_MEMBER_EDGES,
+} from "./bulkRnaNodes";
 
 export const NODES = [
   { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
@@ -16,6 +22,8 @@ export const NODES = [
 
   { id:"qc_scrna",   label:"scRNA QC\nPipeline v3.1",     type:"Pipeline",
     detail:{ "Version":"v3.1", "Tool":"Scanpy 1.9 + DoubletFinder", "Min genes/cell":"200", "Max mito %":"< 20%", "Batch correction":"Harmony", "Script Hash":"sha256:1c2d3e...", "GitHub":"github.com/mai-t1d/pipelines/qc-scrna", "Run Date":"2025-10-14", "SLURM Job":"12345678", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
+  { id:"qc_bulk_rna", label:"Bulk RNA QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"✅ Drive: drive.google.com/…/1GX2GrBNQ0v…", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
   { id:"qc_bulk_atac", label:"Bulk ATAC QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/xinyubao/ATACseq-NextFlow", "Contact":"Xinyu Bao", "Email":"xinyubao@umich.edu" }},
   { id:"qc_atac",    label:"scATAC QC\nPipeline v2.0",    type:"Pipeline",
@@ -25,6 +33,8 @@ export const NODES = [
 
   { id:"proc_scrna", label:"scRNA Dataset\nv2.1",         type:"ProcessedData",
     detail:{ "Version":"v2.1", "Cells before QC":"84,200", "Cells after QC":"72,400", "Cells removed":"~14%", "Donors":"10 (incl. HPAP-002)", "HVGs retained":"3,000", "Doublet rate":"8%", "Median genes/cell":"1,840", "Format":"AnnData .h5ad", "Lighthouse":"/lighthouse/mai-t1d/processed/scrna_v2.1.h5ad", "Deprecated":"false" }},
+  { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Metadata":"QC metadata + Raw metadata (Google Sheets links)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
   { id:"proc_bulk_atac_v1", label:"Bulk ATAC-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/xinyubao/ATACseq-NextFlow", "Contact":"Xinyu Bao", "Email":"xinyubao@umich.edu" }},
   { id:"proc_atac",  label:"scATAC Dataset\nv1.3",        type:"ProcessedData",
@@ -57,8 +67,10 @@ export const NODES = [
     detail:{ "Task":"Regression / association", "Model":"Genomic FM v1", "Description":"Predict eQTLs across islet cell types", "Status":"Active" }},
   { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
     detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
+  BULK_RNA_COHORT_NODE,
   BULK_ATAC_COHORT_NODE,
   ...HPAP_DONOR_NODES,
+  ...BULK_RNA_NODES,
   ...BULK_ATAC_NODES,
 ];
 
@@ -66,8 +78,10 @@ export const EDGES = [
   { source:"raw_scrna",  target:"qc_scrna",      label:"USED" },
   { source:"raw_atac",   target:"qc_atac",        label:"USED" },
   { source:"raw_wgs",    target:"qc_wgs",         label:"USED" },
+  { source:"cohort_bulk_rna_seq", target:"qc_bulk_rna", label:"USED" },
   { source:"cohort_bulk_atac_seq", target:"qc_bulk_atac", label:"USED" },
   { source:"qc_scrna",   target:"proc_scrna",     label:"WAS_GENERATED_BY" },
+  { source:"qc_bulk_rna", target:"proc_bulk_rna_v1", label:"WAS_GENERATED_BY" },
   { source:"qc_bulk_atac", target:"proc_bulk_atac_v1", label:"WAS_GENERATED_BY" },
   { source:"qc_atac",    target:"proc_atac",      label:"WAS_GENERATED_BY" },
   { source:"qc_wgs",     target:"proc_wgs",       label:"WAS_GENERATED_BY" },
@@ -78,6 +92,8 @@ export const EDGES = [
     train:{ "Model version":"scFM-T1D v1.0", "Architecture":"scGPT 70M params", "Epochs":"100", "Batch size":"512", "GPU":"8 A100 80GB", "Cluster":"Lighthouse HPC", "SLURM Job":"99887766", "Script Hash":"sha256:e6f7a8...", "GitHub":"github.com/mai-t1d/pipelines/scfm-pretrain", "Training date":"2025-11-03", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
   { source:"proc_scrna", target:"model_genomic", label:"TRAINED_ON",
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Epochs":"80", "Batch size":"256", "Modality":"scRNA-seq (one of 3)", "GPU":"16 A100 80GB", "Cluster":"Lighthouse HPC", "SLURM Job":"99887800", "Script Hash":"sha256:f7g8h9...", "GitHub":"github.com/mai-t1d/pipelines/genomic-fm", "Training date":"2025-12-01", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
+  { source:"proc_bulk_rna_v1", target:"model_genomic", label:"TRAINED_ON",
+    train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"Bulk RNA-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
   { source:"proc_bulk_atac_v1", target:"model_genomic", label:"TRAINED_ON",
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"Bulk ATAC-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/xinyubao/ATACseq-NextFlow", "Contact":"Xinyu Bao", "Email":"xinyubao@umich.edu" }},
   { source:"proc_atac",  target:"model_genomic", label:"TRAINED_ON",
@@ -94,6 +110,8 @@ export const EDGES = [
   { source:"model_scfm",    target:"task_deconv",    label:"ENABLES" },
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
+  ...BULK_RNA_HAD_MEMBER_EDGES,
   ...BULK_ATAC_HAD_MEMBER_EDGES,
+  ...BULK_RNA_COHORT_MEMBER_EDGES,
   ...BULK_ATAC_COHORT_MEMBER_EDGES,
 ];
