@@ -12,6 +12,43 @@ import {
   BULK_RNA_COHORT_MEMBER_EDGES,
 } from "./bulkRnaNodes";
 
+const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
+const normalizePairContext = (detail = {}) => {
+  const rawCell = String(detail.Cell_Type ?? "").trim();
+  const cell = normalizeText(rawCell);
+  const isCellEmpty = !cell || ["unknown", "unknown cell", "na", "n/a", "null"].includes(cell);
+  if (!isCellEmpty) return cell;
+  return normalizeText(detail.Tissue);
+};
+const pairKeyForNode = (node) => {
+  const donor = normalizeText(node?.detail?.Donor);
+  const context = normalizePairContext(node?.detail);
+  return donor && context ? `${donor}||${context}` : "";
+};
+
+const bulkRnaPairKeys = new Set(BULK_RNA_NODES.map(pairKeyForNode).filter(Boolean));
+const bulkAtacPairKeys = new Set(BULK_ATAC_NODES.map(pairKeyForNode).filter(Boolean));
+const pairedBulkKeys = new Set([...bulkRnaPairKeys].filter((k) => bulkAtacPairKeys.has(k)));
+
+const FILTERED_BULK_RNA_NODES = BULK_RNA_NODES.filter((n) => pairedBulkKeys.has(pairKeyForNode(n)));
+const FILTERED_BULK_ATAC_NODES = BULK_ATAC_NODES.filter((n) => pairedBulkKeys.has(pairKeyForNode(n)));
+
+const filteredBulkRnaIds = new Set(FILTERED_BULK_RNA_NODES.map((n) => n.id));
+const filteredBulkAtacIds = new Set(FILTERED_BULK_ATAC_NODES.map((n) => n.id));
+
+const FILTERED_BULK_RNA_HAD_MEMBER_EDGES = BULK_RNA_HAD_MEMBER_EDGES.filter((e) =>
+  filteredBulkRnaIds.has(e.target)
+);
+const FILTERED_BULK_ATAC_HAD_MEMBER_EDGES = BULK_ATAC_HAD_MEMBER_EDGES.filter((e) =>
+  filteredBulkAtacIds.has(e.target)
+);
+const FILTERED_BULK_RNA_COHORT_MEMBER_EDGES = BULK_RNA_COHORT_MEMBER_EDGES.filter((e) =>
+  filteredBulkRnaIds.has(e.target)
+);
+const FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES = BULK_ATAC_COHORT_MEMBER_EDGES.filter((e) =>
+  filteredBulkAtacIds.has(e.target)
+);
+
 export const NODES = [
 
   { id:"qc_bulk_rna", label:"Bulk RNA QC\nPipeline v1.0", type:"Pipeline",
@@ -50,8 +87,8 @@ export const NODES = [
   BULK_RNA_COHORT_NODE,
   BULK_ATAC_COHORT_NODE,
   ...HPAP_DONOR_NODES,
-  ...BULK_RNA_NODES,
-  ...BULK_ATAC_NODES,
+  ...FILTERED_BULK_RNA_NODES,
+  ...FILTERED_BULK_ATAC_NODES,
 ];
 
 export const EDGES = [
@@ -73,10 +110,10 @@ export const EDGES = [
   { source:"model_scfm",    target:"task_deconv",    label:"ENABLES" },
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
-  ...BULK_RNA_HAD_MEMBER_EDGES,
-  ...BULK_ATAC_HAD_MEMBER_EDGES,
-  ...BULK_RNA_COHORT_MEMBER_EDGES,
-  ...BULK_ATAC_COHORT_MEMBER_EDGES,
+  ...FILTERED_BULK_RNA_HAD_MEMBER_EDGES,
+  ...FILTERED_BULK_ATAC_HAD_MEMBER_EDGES,
+  ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
+  ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
 ];
 
 

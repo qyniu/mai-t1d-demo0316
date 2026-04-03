@@ -224,3 +224,40 @@ Target: auto-generate `<modality>Nodes.js` and integrate into `graphData.js`.
 - `HAD_MEMBER` edges must not point to missing nodes
 - `Processed -> Model` edge only when model is non-empty and non-`TBD`
 - Keep line-break labels as real newline (`\n`), not escaped literal (`\\n`)
+
+## 8. Dataset Card & Model Card linking rule (new baseline)
+
+This is now required for each dataset included in training/validation lineage.
+
+### 8.1 Required nodes per dataset
+- For every processed dataset node `proc_*`, create one dataset card node `dc_*`.
+- Recommended naming:
+  - Dataset node: `proc_<modality_slug>_v<major>`
+  - Dataset card node: `dc_<modality_slug>_v<major>`
+
+### 8.2 Required edges
+- `proc_* -[DOCUMENTED_BY]-> dc_*`
+- `mc_<model> -[LINKED_TO]-> dc_*` for each dataset card consumed by that model card
+
+### 8.3 Minimum dataset card properties
+- `Standard` (e.g., `Datasheets for Datasets (CACM 2021)`)
+- `Format` (e.g., `JSON-LD`)
+- `GitHub` (dataset card path/link; can be placeholder during draft)
+- `Author`
+- `Institution`
+- `Consent`
+- `Known biases`
+- `Status` (`Draft`/`Published`)
+- `Updated` (ISO date)
+
+### 8.4 Model card synchronization
+- In model card detail, keep a summary field (e.g., `Linked dataset cards`) aligned with actual `LINKED_TO` edges.
+- Any time a dataset card is added/removed, update both:
+  1. `mc_*` detail summary text
+  2. `mc_* -> dc_*` edges
+
+### 8.5 Placeholder policy (allowed for demo stage)
+- For missing real card metadata, synthetic/demo placeholder values are allowed.
+- But graph structure is mandatory:
+  - dataset must still have a `DOCUMENTED_BY` card edge
+  - model card must still `LINKED_TO` corresponding dataset card(s)
