@@ -48,16 +48,16 @@ const isCohortNode = id => String(id).startsWith("cohort_");
 //  GRAPH MODES 
 const GRAPH_MODES = {
   full:    { label:"Full graph",            ids: NODES.map(n=>n.id) },
-  scfm:   { label:"Single-cell FM lineage", ids:["raw_scrna","qc_scrna","proc_scrna","dc_scrna","model_scfm","mc_scfm","task_celltype","task_deconv"] },
-  genomic:{ label:"Genomic FM lineage",    ids:["raw_scrna","raw_atac","raw_wgs","qc_scrna","qc_atac","qc_wgs","proc_scrna","proc_atac","proc_wgs","dc_scrna","dc_atac","dc_wgs","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
-  hpap002:{ label:"HPAP-002 downstream",   ids:["raw_scrna","qc_scrna","proc_scrna","dc_scrna","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"] },
+  scfm:   { label:"Single-cell FM lineage", ids:["model_scfm","mc_scfm","task_celltype","task_deconv"] },
+  genomic:{ label:"Genomic FM lineage",    ids:["cohort_bulk_rna_seq","qc_bulk_rna","proc_bulk_rna_v1","cohort_bulk_atac_seq","qc_bulk_atac","proc_bulk_atac_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
+  hpap002:{ label:"HPAP-002 downstream",   ids:["model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"] },
 };
 
 //  IMPACT SCENARIOS 
 const IMPACT = {
-  revision:   { label:" Dataset Revised (Type B)",   trigger:"proc_scrna", affected:new Set(["proc_scrna","dc_scrna","model_scfm","model_genomic","mc_scfm","mc_genomic"]), outdated:new Set(["model_scfm","model_genomic","mc_scfm","mc_genomic"]), notes:{ "dc_scrna":" Dataset Card must be versioned ?QC parameters changed","model_scfm":"?Outdated ?retrain required (TRAINED_ON ?revised data)","model_genomic":"?Outdated ?retrain required (TRAINED_ON ?revised data)","mc_scfm":"?Model Card outdated ?linked dataset changed","mc_genomic":"?Model Card outdated ?linked dataset changed" }},
-  deprecation:{ label:" Consent Withdrawn (Type C)", trigger:"proc_wgs",   affected:new Set(["proc_wgs","dc_wgs","model_genomic","mc_genomic"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "dc_wgs":" Dataset Card must record deprecation event","model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?LINKED_TO points to deprecated Dataset Card" }},
-  pipeline:   { label:" QC Pipeline Updated",        trigger:"qc_scrna",   affected:new Set(["qc_scrna","proc_scrna","dc_scrna","model_scfm","model_genomic"]), outdated:new Set(["proc_scrna","model_scfm","model_genomic"]), notes:{ "proc_scrna":"?Re-processing recommended with new pipeline","dc_scrna":" Dataset Card must record new pipeline version","model_scfm":"?TRAINED_ON data produced by outdated pipeline","model_genomic":"?TRAINED_ON data produced by outdated pipeline" }},
+  revision:   { label:" Dataset Revised (Type B)",   trigger:"proc_bulk_rna_v1", affected:new Set(["proc_bulk_rna_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "model_genomic":"?Outdated ?retrain required (TRAINED_ON ?revised data)","mc_genomic":"?Model Card outdated ?linked dataset changed" }},
+  deprecation:{ label:" Consent Withdrawn (Type C)", trigger:"proc_bulk_atac_v1", affected:new Set(["proc_bulk_atac_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?upstream dataset changed" }},
+  pipeline:   { label:" QC Pipeline Updated",        trigger:"qc_bulk_rna", affected:new Set(["qc_bulk_rna","proc_bulk_rna_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"]), outdated:new Set(["proc_bulk_rna_v1","model_genomic","mc_genomic"]), notes:{ "proc_bulk_rna_v1":"?Re-processing recommended with new pipeline","model_genomic":"?TRAINED_ON data produced by outdated pipeline","mc_genomic":"?Model Card should be reviewed after retraining" }},
 };
 
 //  PROV LOG CONFIG 
@@ -504,15 +504,12 @@ function computeImpact(triggerId, eventType) {
 }
 
 const CUSTOM_NODE_OPTIONS = [
-  { id:"qc_scrna",   label:"scRNA QC Pipeline v3.1",   type:"Pipeline" },
-  { id:"qc_atac",    label:"scATAC QC Pipeline v2.0",  type:"Pipeline" },
-  { id:"qc_wgs",     label:"WGS Variant Calling v1.2", type:"Pipeline" },
-  { id:"proc_scrna", label:"scRNA Dataset v2.1",        type:"ProcessedData" },
-  { id:"proc_atac",  label:"scATAC Dataset v1.3",       type:"ProcessedData" },
-  { id:"proc_wgs",   label:"WGS Variant Matrix v1.0",  type:"ProcessedData" },
-  { id:"raw_scrna",  label:"HPAP-002 scRNA-seq",        type:"RawData" },
-  { id:"raw_atac",   label:"HPAP cohort scATAC-seq",    type:"RawData" },
-  { id:"raw_wgs",    label:"HPAP cohort WGS",           type:"RawData" },
+  { id:"cohort_bulk_rna_seq", label:"HPAP cohort Bulk RNA-seq", type:"RawData" },
+  { id:"cohort_bulk_atac_seq", label:"HPAP cohort Bulk ATAC-seq", type:"RawData" },
+  { id:"qc_bulk_rna",    label:"Bulk RNA QC Pipeline v1.0", type:"Pipeline" },
+  { id:"qc_bulk_atac",   label:"Bulk ATAC QC Pipeline v1.0", type:"Pipeline" },
+  { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset v1.0", type:"ProcessedData" },
+  { id:"proc_bulk_atac_v1", label:"Bulk ATAC-seq Dataset v1.0", type:"ProcessedData" },
 ];
 
 const EVENT_TYPES = [
@@ -521,13 +518,13 @@ const EVENT_TYPES = [
   { id:"A", label:"Type A ?New data added",            desc:"New donor batch appended to existing dataset" },
 ];
 
-const ORDER = ["raw_scrna","raw_atac","raw_wgs","qc_scrna","qc_atac","qc_wgs","proc_scrna","proc_atac","proc_wgs","dc_scrna","dc_atac","dc_wgs","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"];
+const ORDER = ["cohort_bulk_rna_seq","cohort_bulk_atac_seq","qc_bulk_rna","qc_bulk_atac","proc_bulk_rna_v1","proc_bulk_atac_v1","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"];
 
 function ImpactView() {
   const p = usePres();
   const [tab,         setTab]         = useState("scenario");
   const [sc,          setSc]          = useState("pipeline");
-  const [customNode,  setCustomNode]  = useState("qc_scrna");
+  const [customNode,  setCustomNode]  = useState("qc_bulk_rna");
   const [eventType,   setEventType]   = useState("B");
   const [customResult,setCustomResult]= useState(null);
 
@@ -604,9 +601,9 @@ function ImpactView() {
 
             <div style={{ padding:"10px 14px", borderRadius:8, background:"#fffbeb", border:"1px solid #fcd34d", marginBottom:16, fontSize:p?13:11, color:"#78350f", fontFamily:"Georgia,serif", lineHeight:1.6 }}>
               <strong>Trigger: </strong>
-              {sc==="revision"    ? "HPAP-016 scRNA data revised ?re-QC'd with pipeline v4 (updated doublet thresholds). Raw data unchanged."
-              :sc==="deprecation" ? "HPAP-088 WGS data retracted ?consent withdrawn 2025-Q2. Raw data deprecated, downstream models on compliance hold."
-              :                     "scRNA QC pipeline updated v3.1 ?v4.0 (new ambient RNA removal step). Raw data is unaffected ?only downstream artifacts flagged."}
+              {sc==="revision"    ? "Bulk RNA dataset revised: metadata/QC refresh propagates to Genomic FM and dependent artifacts."
+              :sc==="deprecation" ? "Bulk ATAC dataset deprecated/retracted: downstream Genomic FM lineage is flagged for compliance review."
+              :                     "Bulk RNA QC pipeline updated from v1.0: processed dataset and model lineage require re-evaluation."}
             </div>
 
             {renderNodeList(s.trigger, s.affected, s.outdated)}
