@@ -1,42 +1,10 @@
-﻿//  NODE TYPES 
-export const TYPE = {
-  RawData:       { bg:"#eff6ff", border:"#3b82f6", text:"#1e40af", badge:"#dbeafe", icon:"🧬", label:"Raw Biobank Data" },
-  Pipeline:      { bg:"#f0fdf4", border:"#22c55e", text:"#15803d", badge:"#dcfce7", icon:"⚙️", label:"QC Pipeline" },
-  ProcessedData: { bg:"#ecfdf5", border:"#10b981", text:"#065f46", badge:"#d1fae5", icon:"📊", label:"Processed Dataset" },
-  DatasetCard:   { bg:"#fefce8", border:"#f59e0b", text:"#92400e", badge:"#fef3c7", icon:"📄", label:"Dataset Card" },
-  Model:         { bg:"#fff1f2", border:"#f43f5e", text:"#9f1239", badge:"#ffe4e6", icon:"🧠", label:"Foundation Model" },
-  ModelCard:     { bg:"#fff7ed", border:"#f97316", text:"#9a3412", badge:"#ffedd5", icon:"📋", label:"Model Card" },
-  DownstreamTask:{ bg:"#f1f5f9", border:"#94a3b8", text:"#475569", badge:"#e2e8f0", icon:"🎯", label:"Downstream Task" },
-};
-
-export const EDGE_STYLE = {
-  "USED":             { color:"#3b82f6", dash:"none", width:1.8 },
-  "WAS_GENERATED_BY": { color:"#22c55e", dash:"none", width:1.8 },
-  "TRAINED_ON":       { color:"#8b5cf6", dash:"none", width:2.2 },
-  "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
-  "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
-  "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
-  "HAS_DONOR":        { color:"#0ea5e9", dash:"2,2",  width:1.2 },
-};
-
-export const EDGE_LEGEND = [
-  { key:"USED",             label:"USED" },
-  { key:"WAS_GENERATED_BY", label:"WAS_GENERATED_BY" },
-  { key:"TRAINED_ON",       label:"TRAINED_ON (with training metadata)" },
-  { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
-  { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
-  { key:"ENABLES",          label:"ENABLES" },
-  { key:"HAS_DONOR",        label:"HAS_DONOR" },
-];
-
-//  NODES 
-export const NODES = [
+﻿export const NODES = [
   { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
     detail:{ "Donor":"HPAP-002", "Modality":"scRNA-seq", "Source":"HPAP / PancDB", "Platform":"10x Genomics Chromium v3", "Lighthouse":"/lighthouse/mai-t1d/raw/scrna/hpap002/", "Portal":"hpap.pmacs.upenn.edu", "Access":"DUA-HPAP-2024-001", "Responsible":"HPAP Consortium / UPenn", "Checksum":"sha256:a1b2c3..." }},
   { id:"raw_atac",   label:"HPAP cohort\nscATAC-seq",     type:"RawData",
-    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001", "Connections":"USED scATAC QC Pipeline v2.0" }},
+    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001" }},
   { id:"raw_wgs",    label:"HPAP cohort\nWGS",            type:"RawData",
-    detail:{ "Modality":"WGS", "Donors":"194 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/wgs/", "Access":"DUA-HPAP-2024-001", "Connections":"USED WGS Variant Calling v1.2" }},
+    detail:{ "Modality":"WGS", "Donors":"194 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/wgs/", "Access":"DUA-HPAP-2024-001" }},
 
   { id:"qc_scrna",   label:"scRNA QC\nPipeline v3.1",     type:"Pipeline",
     detail:{ "Version":"v3.1", "Tool":"Scanpy 1.9 + DoubletFinder", "Min genes/cell":"200", "Max mito %":"< 20%", "Batch correction":"Harmony", "Script Hash":"sha256:1c2d3e...", "GitHub":"github.com/mai-t1d/pipelines/qc-scrna", "Run Date":"2025-10-14", "SLURM Job":"12345678", "Executor":"Kai Liu", "Institution":"University of Michigan" }},
@@ -77,8 +45,6 @@ export const NODES = [
     detail:{ "Task":"Regression / association", "Model":"Genomic FM v1", "Description":"Predict eQTLs across islet cell types", "Status":"Active" }},
   { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
     detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
-  { id:"1ea9c376", label:"Raw BioBank Data", type:"RawData",
-    detail:{ "Modality":"scATAC-seq", "Donors":"8 donors", "Source":"HPAP/PancDB", "Lighthouse":"/lighthouse/mai-t1d/raw/atac/", "Access":"DUA-HPAP-2024-001", "Connections":"USED scATAC QC Pipeline v2.0" }},
 ];
 
 export const EDGES = [

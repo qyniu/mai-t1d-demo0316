@@ -1,60 +1,42 @@
-﻿import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+﻿import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as d3 from "d3";
+import { NODES, EDGES } from "./graphData";
 
-import { TYPE, EDGE_STYLE, EDGE_LEGEND, NODES, EDGES } from "./graphData";
+//  NODE TYPES 
+const TYPE = {
+  RawData:       { bg:"#eff6ff", border:"#3b82f6", text:"#1e40af", badge:"#dbeafe", icon:"🧬", label:"Raw Biobank Data" },
+  Pipeline:      { bg:"#f0fdf4", border:"#22c55e", text:"#15803d", badge:"#dcfce7", icon:"⚙️", label:"QC Pipeline" },
+  ProcessedData: { bg:"#ecfdf5", border:"#10b981", text:"#065f46", badge:"#d1fae5", icon:"📊", label:"Processed Dataset" },
+  DatasetCard:   { bg:"#fefce8", border:"#f59e0b", text:"#92400e", badge:"#fef3c7", icon:"📄", label:"Dataset Card" },
+  Model:         { bg:"#fff1f2", border:"#f43f5e", text:"#9f1239", badge:"#ffe4e6", icon:"🧠", label:"Foundation Model" },
+  ModelCard:     { bg:"#fff7ed", border:"#f97316", text:"#9a3412", badge:"#ffedd5", icon:"📋", label:"Model Card" },
+  DownstreamTask:{ bg:"#f1f5f9", border:"#94a3b8", text:"#475569", badge:"#e2e8f0", icon:"🎯", label:"Downstream Task" },
+};
+
+const EDGE_STYLE = {
+  "USED":             { color:"#3b82f6", dash:"none", width:1.8 },
+  "WAS_GENERATED_BY": { color:"#22c55e", dash:"none", width:1.8 },
+  "TRAINED_ON":       { color:"#8b5cf6", dash:"none", width:2.2 },
+  "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
+  "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
+  "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
+};
+
+const EDGE_LEGEND = [
+  { key:"USED",             label:"USED" },
+  { key:"WAS_GENERATED_BY", label:"WAS_GENERATED_BY" },
+  { key:"TRAINED_ON",       label:"TRAINED_ON (with training metadata)" },
+  { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
+  { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
+  { key:"ENABLES",          label:"ENABLES" },
+];
+
+//  NODES 
+
 
 //  HELPERS: safe edge id extraction 
 const edgeSrcId = e => typeof e.source === "object" ? e.source.id : e.source;
 const edgeTgtId = e => typeof e.target === "object" ? e.target.id : e.target;
-const DONOR_NODE_PREFIX = "donor__";
-
-function donorCountForRawNode(node) {
-  if (!node || node.type !== "RawData") return 0;
-  const donorText = node.detail?.Donors;
-  if (typeof donorText === "string") {
-    const m = donorText.match(/\d+/);
-    if (m) return Number(m[0]);
-  } else if (typeof donorText === "number") {
-    return donorText;
-  }
-  if (node.detail?.Donor) return 1;
-  return 0;
-}
-
-function donorIdForRawNode(node, index) {
-  if (index === 0 && node.detail?.Donor) return String(node.detail.Donor);
-  return `HPAP-${String(index + 1).padStart(3, "0")}`;
-}
-
-function buildDonorNodesForRawNode(rawNode) {
-  const count = donorCountForRawNode(rawNode);
-  if (!count) return [];
-
-  const modality = rawNode.detail?.Modality || "Raw data";
-  const source = rawNode.detail?.Source || "HPAP/PancDB";
-  const access = rawNode.detail?.Access || "DUA-HPAP-2024-001";
-  const lighthouseRoot = rawNode.detail?.Lighthouse || "";
-  const parentLabel = rawNode.label?.replace("\n", " ") || rawNode.id;
-
-  return Array.from({ length: count }, (_, i) => {
-    const donorId = donorIdForRawNode(rawNode, i);
-    return {
-      id: `${DONOR_NODE_PREFIX}${rawNode.id}_${String(i + 1).padStart(3, "0")}`,
-      label: `${donorId}\n${modality}`,
-      type: "RawData",
-      isDonor: true,
-      parentRawId: rawNode.id,
-      detail: {
-        Donor: donorId,
-        Modality: modality,
-        Source: source,
-        "Parent raw dataset": parentLabel,
-        Lighthouse: lighthouseRoot ? `${lighthouseRoot}${lighthouseRoot.endsWith("/") ? "" : "/"}donors/${donorId}/` : "N/A",
-        Access: access,
-      },
-    };
-  });
-}
 
 //  GRAPH MODES 
 const GRAPH_MODES = {
@@ -67,7 +49,7 @@ const GRAPH_MODES = {
 //  IMPACT SCENARIOS 
 const IMPACT = {
   revision:   { label:" Dataset Revised (Type B)",   trigger:"proc_scrna", affected:new Set(["proc_scrna","dc_scrna","model_scfm","model_genomic","mc_scfm","mc_genomic"]), outdated:new Set(["model_scfm","model_genomic","mc_scfm","mc_genomic"]), notes:{ "dc_scrna":" Dataset Card must be versioned ?QC parameters changed","model_scfm":"?Outdated ?retrain required (TRAINED_ON ?revised data)","model_genomic":"?Outdated ?retrain required (TRAINED_ON ?revised data)","mc_scfm":"?Model Card outdated ?linked dataset changed","mc_genomic":"?Model Card outdated ?linked dataset changed" }},
-  deprecation:{ label:" Policy-Driven Archival (Type C)", trigger:"proc_wgs",   affected:new Set(["proc_wgs","dc_wgs","model_genomic","mc_genomic"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "dc_wgs":" Dataset Card must record deprecation event","model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?LINKED_TO points to deprecated Dataset Card" }},
+  deprecation:{ label:" Consent Withdrawn (Type C)", trigger:"proc_wgs",   affected:new Set(["proc_wgs","dc_wgs","model_genomic","mc_genomic"]), outdated:new Set(["model_genomic","mc_genomic"]), notes:{ "dc_wgs":" Dataset Card must record deprecation event","model_genomic":"?COMPLIANCE HOLD ?TRAINED_ON edge traces to retracted data","mc_genomic":"?Model Card outdated ?LINKED_TO points to deprecated Dataset Card" }},
   pipeline:   { label:" QC Pipeline Updated",        trigger:"qc_scrna",   affected:new Set(["qc_scrna","proc_scrna","dc_scrna","model_scfm","model_genomic"]), outdated:new Set(["proc_scrna","model_scfm","model_genomic"]), notes:{ "proc_scrna":"?Re-processing recommended with new pipeline","dc_scrna":" Dataset Card must record new pipeline version","model_scfm":"?TRAINED_ON data produced by outdated pipeline","model_genomic":"?TRAINED_ON data produced by outdated pipeline" }},
 };
 
@@ -119,8 +101,6 @@ const MODALITIES   = ["scRNA-seq","scATAC-seq","WGS","Spatial (CODEX)","Spatial 
 //  PRESENTATION MODE CONTEXT 
 const PresentationCtx = React.createContext(false);
 const usePres = () => React.useContext(PresentationCtx);
-const GraphDataCtx = React.createContext(null);
-const useGraphData = () => React.useContext(GraphDataCtx);
 
 // scaled font helper: returns base size + offset in presentation mode
 function fs(base, presOffset = 2) {
@@ -160,7 +140,6 @@ function CompactLegend() {
 //  PROVENANCE LOG VIEW 
 function ProvLogView() {
   const p = usePres();
-  const { addNode, addEdge, updateNode } = useGraphData();
   const [nodeType,    setNodeType]    = useState(null);
   const [instanceId,  setInstanceId]  = useState("");
   const [taskOp,      setTaskOp]      = useState("update");
@@ -271,7 +250,7 @@ function ProvLogView() {
       <div style={{ flex:1, overflowY:"auto", padding:"24px 28px", background:"#f8fafc" }}>
         <div style={{ maxWidth:580, margin:"0 auto" }}>
           <div style={{ textAlign:"center", marginBottom:22 }}>
-            <div style={{ fontSize:p?13:11, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:6 }}>MODE 1 | GOVERNED UI · AI-ASSISTED PROVENANCE LOG</div>
+            <div style={{ fontSize:p?13:11, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:6 }}>Mode 1 ?Manual Provenance Log</div>
             <div style={{ fontSize:p?18:16, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif", marginBottom:5 }}>Provenance Log Entry</div>
             <div style={{ fontSize:p?13:11, color:"#64748b", fontStyle:"italic", fontFamily:"Georgia,serif", lineHeight:1.6 }}>
               Record any update ?raw data, pipeline, processed dataset,<br/>training run, model, card, or downstream task.<br/>
@@ -482,40 +461,7 @@ function ProvLogView() {
           )}
 
           <button disabled={!canSubmit}
-            onClick={()=>{
-              if(canSubmit){
-                const lid = "log_"+Date.now().toString(36).toUpperCase();
-                setLogId(lid);
-                if (isAdding) {
-                  addNode({
-                    id: fields.task_id,
-                    label: `${fields.task_name}\n${fields.task_type||"Task"}`,
-                    type: "DownstreamTask",
-                    detail: {
-                      ...(fields.task_type ? {"Task": fields.task_type} : {}),
-                      "Model": fields.model_id,
-                      "Description": fields.description,
-                      "Status": fields.status || "In development",
-                      "Institution": fields.institution || institution,
-                      ...(fields.eu_ai_act ? {"EU AI Act": fields.eu_ai_act} : {}),
-                      "Executor": executor,
-                      ...(email ? {"Email": email} : {}),
-                      "Log ID": lid,
-                    }
-                  });
-                  addEdge({ source: fields.model_id, target: fields.task_id, label: "ENABLES" });
-                } else if (instanceId) {
-                  const patch = {};
-                  if (executor) patch["Executor"] = executor;
-                  if (email) patch["Email"] = email;
-                  if (institution) patch["Institution"] = institution;
-                  if (activeFields) activeFields.forEach(f => { if (fields[f.key]) patch[f.label.replace(" *","")] = fields[f.key]; });
-                  patch["Log ID"] = lid;
-                  updateNode(instanceId, patch);
-                }
-                setSubmitted(true);
-              }
-            }}
+            onClick={()=>{ if(canSubmit){ setLogId("log_"+Date.now().toString(36).toUpperCase()); setSubmitted(true); }}}
             style={{ width:"100%", padding:"11px", borderRadius:8, border:"none", cursor:canSubmit?"pointer":"not-allowed", background:canSubmit?"#0f172a":"#cbd5e1", color:"#fff", fontSize:p?14:12, fontWeight:700, fontFamily:"Georgia,serif", transition:"background 0.2s", opacity:canSubmit?1:0.55 }}>
             Submit provenance log ?          </button>
           <div style={{ textAlign:"center", marginTop:8, fontSize:p?11:9.5, color:"#94a3b8", fontStyle:"italic", fontFamily:"Georgia,serif" }}>
@@ -652,7 +598,7 @@ function ImpactView() {
             <div style={{ padding:"10px 14px", borderRadius:8, background:"#fffbeb", border:"1px solid #fcd34d", marginBottom:16, fontSize:p?13:11, color:"#78350f", fontFamily:"Georgia,serif", lineHeight:1.6 }}>
               <strong>Trigger: </strong>
               {sc==="revision"    ? "HPAP-016 scRNA data revised ?re-QC'd with pipeline v4 (updated doublet thresholds). Raw data unchanged."
-              :sc==="deprecation" ? "V2.1.1 policy change: CellRanger processed files archived across ~60 donors. Raw data unaffected — only downstream artifacts trained on processed files flagged."
+              :sc==="deprecation" ? "HPAP-088 WGS data retracted ?consent withdrawn 2025-Q2. Raw data deprecated, downstream models on compliance hold."
               :                     "scRNA QC pipeline updated v3.1 ?v4.0 (new ambient RNA removal step). Raw data is unaffected ?only downstream artifacts flagged."}
             </div>
 
@@ -734,33 +680,11 @@ function ImpactView() {
 const NW=140, NH=58;
 function GraphView({ graphMode, highlightLinked }) {
   const p = usePres();
-  const { nodes: ctxNodes, edges: ctxEdges } = useGraphData();
   const svgRef  = useRef(null);
   const wrapRef = useRef(null);
   const [size, setSize]         = useState({w:900,h:600});
   const [selected, setSelected] = useState(null);
   const [selEdge,  setSelEdge]  = useState(null);
-  const [expandedRawIds, setExpandedRawIds] = useState([]);
-
-  const { graphNodes, graphEdges } = useMemo(() => {
-    const visIds = new Set(graphMode==="full" ? ctxNodes.map(n=>n.id) : GRAPH_MODES[graphMode].ids);
-    const baseNodes = ctxNodes.filter(n => visIds.has(n.id)).map(n => ({ ...n }));
-    const baseEdges = ctxEdges.filter(e => visIds.has(e.source) && visIds.has(e.target)).map(e => ({ ...e }));
-
-    const donorNodes = [];
-    const donorEdges = [];
-    expandedRawIds.forEach(rawId => {
-      const rawNode = baseNodes.find(n => n.id === rawId && n.type === "RawData");
-      if (!rawNode) return;
-      const children = buildDonorNodesForRawNode(rawNode);
-      children.forEach(child => {
-        donorNodes.push(child);
-        donorEdges.push({ source: rawNode.id, target: child.id, label: "HAS_DONOR" });
-      });
-    });
-
-    return { graphNodes: [...baseNodes, ...donorNodes], graphEdges: [...baseEdges, ...donorEdges] };
-  }, [graphMode, expandedRawIds]);
 
   useEffect(()=>{
     if(!wrapRef.current) return;
@@ -768,18 +692,16 @@ function GraphView({ graphMode, highlightLinked }) {
     obs.observe(wrapRef.current); return()=>obs.disconnect();
   },[]);
 
-  useEffect(() => {
+  useEffect(()=>{
     setSelected(null);
     setSelEdge(null);
-    setExpandedRawIds([]);
-  }, [graphMode]);
-
-  useEffect(()=>{
     if(!svgRef.current) return;
     const{w,h}=size;
     const svg=d3.select(svgRef.current); svg.selectAll("*").remove();
-    const nodes = graphNodes.map(n => ({ ...n }));
-    const edges = graphEdges.map(e => ({ ...e }));
+
+    const visIds=GRAPH_MODES[graphMode].ids;
+    const nodes=NODES.filter(n=>visIds.includes(n.id)).map(n=>({...n}));
+    const edges=EDGES.filter(e=>visIds.includes(e.source)&&visIds.includes(e.target)).map(e=>({...e}));
 
     const defs=svg.append("defs");
     const pat=defs.append("pattern").attr("id","grid").attr("width",30).attr("height",30).attr("patternUnits","userSpaceOnUse");
@@ -813,37 +735,24 @@ function GraphView({ graphMode, highlightLinked }) {
 
     const nG=g.append("g").selectAll(".ng").data(nodes).enter().append("g").attr("class","ng").style("cursor","pointer")
       .call(d3.drag().on("start",(e,d)=>{if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;}).on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;}).on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}))
-      .on("click",(e,d)=>{
-        e.stopPropagation();
-        if (d.type === "RawData" && !d.isDonor && donorCountForRawNode(d) > 0) {
-          setExpandedRawIds(prev => prev.includes(d.id) ? prev.filter(id => id !== d.id) : [...prev, d.id]);
-        }
-        setSelected(prev=>prev?.id===d.id?null:d);
-        setSelEdge(null);
-      });
+      .on("click",(e,d)=>{e.stopPropagation();setSelected(prev=>prev?.id===d.id?null:d);setSelEdge(null);});
 
-    nG.append("rect").attr("x",d=>-(d.isDonor?106:NW)/2).attr("y",d=>-(d.isDonor?42:NH)/2).attr("width",d=>d.isDonor?106:NW).attr("height",d=>d.isDonor?42:NH).attr("rx",8)
+    nG.append("rect").attr("x",-NW/2).attr("y",-NH/2).attr("width",NW).attr("height",NH).attr("rx",8)
       .attr("fill",d=>TYPE[d.type].bg).attr("stroke",d=>TYPE[d.type].border).attr("stroke-width",1.8).attr("filter","url(#shadow)");
-    nG.append("rect").attr("x",d=>-(d.isDonor?106:NW)/2).attr("y",d=>-(d.isDonor?42:NH)/2).attr("width",d=>d.isDonor?106:NW).attr("height",d=>d.isDonor?4:5).attr("rx",8).attr("fill",d=>TYPE[d.type].border);
-    nG.append("rect").attr("x",d=>-(d.isDonor?106:NW)/2).attr("y",d=>-(d.isDonor?42:NH)/2+(d.isDonor?2:3)).attr("width",d=>d.isDonor?106:NW).attr("height",2).attr("fill",d=>TYPE[d.type].border);
-    nG.append("text")
-      .attr("text-anchor","middle")
-      .attr("y",d=>d.isDonor?-4:-8)
-      .attr("font-size",d=>d.isDonor?10:13)
-      .attr("font-family","Georgia, serif")
-      .attr("pointer-events","none")
-      .text(d=>TYPE[d.type].icon || "•");
+    nG.append("rect").attr("x",-NW/2).attr("y",-NH/2).attr("width",NW).attr("height",5).attr("rx",8).attr("fill",d=>TYPE[d.type].border);
+    nG.append("rect").attr("x",-NW/2).attr("y",-NH/2+3).attr("width",NW).attr("height",2).attr("fill",d=>TYPE[d.type].border);
+    nG.append("text").attr("text-anchor","middle").attr("y",-8).attr("font-size",13).attr("pointer-events","none").text(d=>TYPE[d.type].icon);
     nG.each(function(d){
       const lines=d.label.split("\n");
-      const t=d3.select(this).append("text").attr("text-anchor","middle").attr("font-size",d.isDonor?(p?9:8):(p?11:9)).attr("font-weight","700").attr("font-family","Georgia,serif").attr("fill",TYPE[d.type].text).attr("pointer-events","none");
-      lines.forEach((l,i)=>t.append("tspan").attr("x",0).attr("dy",d.isDonor?(i===0?6:9):(i===0?9:11)).text(l));
+      const t=d3.select(this).append("text").attr("text-anchor","middle").attr("font-size",p?11:9).attr("font-weight","700").attr("font-family","Georgia,serif").attr("fill",TYPE[d.type].text).attr("pointer-events","none");
+      lines.forEach((l,i)=>t.append("tspan").attr("x",0).attr("dy",i===0?9:11).text(l));
     });
 
     const sim=d3.forceSimulation(nodes)
-      .force("link",d3.forceLink(edges).id(d=>d.id).distance(d=>d.label==="HAS_DONOR"?52:["DOCUMENTED_BY","LINKED_TO","ENABLES"].includes(d.label)?110:200).strength(d=>d.label==="HAS_DONOR"?0.9:0.42))
+      .force("link",d3.forceLink(edges).id(d=>d.id).distance(d=>["DOCUMENTED_BY","LINKED_TO","ENABLES"].includes(d.label)?110:200).strength(0.42))
       .force("charge",d3.forceManyBody().strength(-580))
       .force("center",d3.forceCenter(w/2,h/2))
-      .force("collision",d3.forceCollide(d=>d.isDonor?42:88));
+      .force("collision",d3.forceCollide(88));
 
     sim.on("tick",()=>{
       eG.select("line.hit").attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
@@ -854,7 +763,7 @@ function GraphView({ graphMode, highlightLinked }) {
     });
     svg.on("click",()=>{ setSelected(null); setSelEdge(null); });
     return()=>sim.stop();
-  },[size,p,graphMode,ctxNodes,ctxEdges]);
+  },[size,graphMode,p]);
 
   // FIX: selection highlighting + LINKED_TO highlight mode
   useEffect(()=>{
@@ -865,7 +774,7 @@ function GraphView({ graphMode, highlightLinked }) {
     // LINKED_TO highlight: nodes involved in LINKED_TO edges
     const linkedNodeIds = new Set();
     if (highlightLinked) {
-      ctxEdges.filter(e=>e.label==="LINKED_TO").forEach(e=>{
+      EDGES.filter(e=>e.label==="LINKED_TO").forEach(e=>{
         linkedNodeIds.add(edgeSrcId(e));
         linkedNodeIds.add(edgeTgtId(e));
       });
@@ -902,11 +811,11 @@ function GraphView({ graphMode, highlightLinked }) {
       if (highlightLinked && !anyActive && d.label==="LINKED_TO") return 0.95;
       return 0.55;
     });
-  },[selected, selEdge, highlightLinked, graphEdges]);
+  },[selected, selEdge, highlightLinked]);
 
-  const connEdges=selected?ctxEdges.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
-  const srcNode = selEdge ? ctxNodes.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
-  const tgtNode = selEdge ? ctxNodes.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
+  const connEdges=selected?EDGES.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
+  const srcNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
+  const tgtNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
 
   return (
     <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
@@ -971,7 +880,7 @@ function GraphView({ graphMode, highlightLinked }) {
                     const tgtId = edgeTgtId(e);
                     const oid=srcId===selected.id?tgtId:srcId;
                     const dir = srcId===selected.id ? "->" : "<-";
-                    const other=graphNodes.find(n=>n.id===oid);
+                    const other=NODES.find(n=>n.id===oid);
                     const ec=EDGE_STYLE[e.label]?.color||"#aaa";
                     return(
                       <div key={i} onClick={()=>setSelected(other)} style={{ display:"flex", alignItems:"center", gap:6, background:"#f8fafc", border:`1px solid ${ec}44`, borderRadius:5, padding:"5px 8px", cursor:"pointer" }}>
@@ -993,7 +902,7 @@ function GraphView({ graphMode, highlightLinked }) {
             <div style={{ marginTop:12, padding:"10px 14px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:8, fontSize:p?12:10, color:"#374151", lineHeight:1.8, textAlign:"left", fontFamily:"Georgia,serif" }}>
               <strong>Showing</strong><br/>
               {GRAPH_MODES[graphMode].label}<br/>
-              <span style={{ fontFamily:"monospace", fontSize:p?11.5:9.5 }}>{graphNodes.length} nodes visible</span>
+              <span style={{ fontFamily:"monospace", fontSize:p?11.5:9.5 }}>{GRAPH_MODES[graphMode].ids.length} nodes visible</span>
             </div>
           </div>
         )}
@@ -1095,14 +1004,13 @@ const AGENT_TOOLS = [
 ];
 
 const SUGGESTIONS = [
-  "What datasets trained model scFM-v1?",                      // CQ1
-  "Which models are downstream of scRNA v1.2?",                // CQ2
-  "Is HPAP-088 WGS data available for use?",                   // CQ3
-  "What QC pipeline produced scRNA for scFM-v1?",              // CQ4
-  "What governance events occurred in 2025-Q2?",               // CQ5
-  "Which models need re-eval after HPAP-016 re-QC?",           // CQ6
-  "Who is responsible for QC pipeline scRNA-v4?",              // CQ7
-  "Which Vanderbilt datasets were used post-2024?",            // CQ8
+  "What datasets trained Single-cell FM?",
+  "Which models used scRNA data?",
+  "Is any model on compliance hold?",
+  "Show the provenance chain for Genomic FM",
+  "What downstream tasks does Single-cell FM enable?",
+  "Who ran the WGS pipeline?",
+  "Which Dataset Cards does the Genomic FM Model Card link to?",
 ];
 
 function AgentView() {
@@ -1285,7 +1193,7 @@ function AgentView() {
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         <div style={{ padding:"10px 18px", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>Mode 1 / Governed UI</div>
+            <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>AI Agent Interface ?Mode 4</div>
             <div style={{ fontSize:p?15.5:13.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>MAI-T1D Governance Agent</div>
             <div style={{ fontSize:p?12:10, color:"#64748b", fontStyle:"italic", fontFamily:"Georgia,serif" }}>Queries the provenance graph via structured tool calls  Claude Sonnet</div>
           </div>
@@ -1437,17 +1345,12 @@ export default function App() {
   const [graphMode,      setGraphMode]      = useState("full");
   const [presMode,       setPresMode]       = useState(false);  // FIX #6: presentation mode
   const [highlightLinked,setHighlightLinked] = useState(false); // FIX #8: LINKED_TO highlight
-  const [graphNodes,     setGraphNodes]     = useState(NODES);
-  const [graphEdges,     setGraphEdges]     = useState(EDGES);
-  const addGraphNode  = useCallback(node => setGraphNodes(ns => [...ns, node]), []);
-  const addGraphEdge  = useCallback(edge => setGraphEdges(es => [...es, edge]), []);
-  const updateGraphNode = useCallback((id, patch) => setGraphNodes(ns => ns.map(n => n.id===id ? {...n, detail:{...n.detail,...patch}} : n)), []);
 
   const MODES = [
     { id:"full",   label:"🕸️ Provenance Graph" },
     { id:"impact", label:"⚡ Impact Analysis" },
-    { id:"agent",  label:"🤖 Governance Agent" },
     { id:"log",    label:"📝 Provenance Log Entry" },
+    { id:"agent",  label:"🤖 Governance Agent" },
   ];
 
   const GMODES = [
@@ -1460,7 +1363,6 @@ export default function App() {
   const p = presMode;
 
   return (
-    <GraphDataCtx.Provider value={{nodes:graphNodes,edges:graphEdges,addNode:addGraphNode,addEdge:addGraphEdge,updateNode:updateGraphNode}}>
     <PresentationCtx.Provider value={presMode}>
     <div style={{ display:"flex", height:"100vh", background:"#f1f5f9", fontFamily:"Georgia,'Times New Roman',serif", color:"#1e293b", overflow:"hidden" }}>
 
@@ -1536,7 +1438,7 @@ export default function App() {
         <div style={{ padding:"9px 18px", background:"rgba(241,245,249,0.97)", borderBottom:"1px solid #cbd5e1", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
           <div>
             <span style={{ fontWeight:700, fontSize:p?15.5:13.5, color:"#0f172a" }}>MAI-T1D  Data Traceability & Model Governance</span>
-            <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>HPAP · Multi-modal · W3C PROV · Knowledge Graph</span>
+            <span style={{ marginLeft:10, fontSize:p?12:10, color:"#64748b", fontFamily:"monospace" }}>HPAP scRNA-seq  W3C PROV  Knowledge Graph</span>
           </div>
           <div style={{ display:"flex", gap:5, alignItems:"center" }}>
             {[["#3b82f6",`${NODES.length} nodes`],["#10b981",`${EDGES.length} edges`],["#f43f5e","Model Card ?Dataset Card"]].map(([c,l])=>(
@@ -1574,7 +1476,6 @@ export default function App() {
       </div>
     </div>
     </PresentationCtx.Provider>
-    </GraphDataCtx.Provider>
   );
 }
 
