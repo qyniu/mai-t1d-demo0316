@@ -934,3 +934,21 @@ export const BULK_ATAC_HAD_MEMBER_EDGES = [
     "label": "HAD_MEMBER"
   }
 ];
+
+export const BULK_ATAC_COHORT_NODE = {
+  "id": "cohort_bulk_atac_seq",
+  "label": "HPAP cohort Bulk ATAC-seq",
+  "type": "RawData",
+  "detail": {
+    "Data Modality": "Bulk ATAC-seq",
+    "Scope": "HPAP cohort",
+    "Members": String(BULK_ATAC_NODES.length),
+    "Description": "Cohort-level parent node for Bulk ATAC sample nodes"
+  }
+};
+
+export const BULK_ATAC_COHORT_MEMBER_EDGES = BULK_ATAC_NODES.map((node) => ({
+  source: BULK_ATAC_COHORT_NODE.id,
+  target: node.id,
+  label: "HAD_MEMBER",
+}));

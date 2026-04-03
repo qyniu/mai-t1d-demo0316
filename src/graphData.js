@@ -1,5 +1,10 @@
-﻿import { HPAP_DONOR_NODES } from "./hpapDonorNodes";
-import { BULK_ATAC_NODES, BULK_ATAC_HAD_MEMBER_EDGES } from "./bulkAtacNodes";
+import { HPAP_DONOR_NODES } from "./hpapDonorNodes";
+import {
+  BULK_ATAC_NODES,
+  BULK_ATAC_HAD_MEMBER_EDGES,
+  BULK_ATAC_COHORT_NODE,
+  BULK_ATAC_COHORT_MEMBER_EDGES,
+} from "./bulkAtacNodes";
 
 export const NODES = [
   { id:"raw_scrna",  label:"HPAP-002\nscRNA-seq",         type:"RawData",
@@ -48,6 +53,7 @@ export const NODES = [
     detail:{ "Task":"Regression / association", "Model":"Genomic FM v1", "Description":"Predict eQTLs across islet cell types", "Status":"Active" }},
   { id:"task_epigenome", label:"Epigenome\nPrediction",      type:"DownstreamTask",
     detail:{ "Task":"Sequence-to-function", "Model":"Genomic FM v1", "Description":"Predict chromatin accessibility and histone marks from DNA sequence", "Status":"Active" }},
+  BULK_ATAC_COHORT_NODE,
   ...HPAP_DONOR_NODES,
   ...BULK_ATAC_NODES,
 ];
@@ -81,12 +87,5 @@ export const EDGES = [
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
   ...BULK_ATAC_HAD_MEMBER_EDGES,
+  ...BULK_ATAC_COHORT_MEMBER_EDGES,
 ];
-
-
-
-
-
-
-
-
