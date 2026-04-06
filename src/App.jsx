@@ -9,6 +9,7 @@ const TYPE = {
   ProcessedData: { bg:"#ecfdf5", border:"#10b981", text:"#065f46", badge:"#d1fae5", icon:"📊", label:"Processed Dataset" },
   DatasetCard:   { bg:"#fefce8", border:"#f59e0b", text:"#92400e", badge:"#fef3c7", icon:"📄", label:"Dataset Card" },
   Model:         { bg:"#fff1f2", border:"#f43f5e", text:"#9f1239", badge:"#ffe4e6", icon:"🧠", label:"Foundation Model" },
+  FineTunedModel:{ bg:"#eef2ff", border:"#4f46e5", text:"#3730a3", badge:"#e0e7ff", icon:"🛠️", label:"Finetuned Model" },
   ModelCard:     { bg:"#fff7ed", border:"#f97316", text:"#9a3412", badge:"#ffedd5", icon:"📋", label:"Model Card" },
   DownstreamTask:{ bg:"#f1f5f9", border:"#94a3b8", text:"#475569", badge:"#e2e8f0", icon:"🎯", label:"Downstream Task" },
 };
@@ -20,6 +21,7 @@ const EDGE_STYLE = {
   "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
   "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
   "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
+  "DERIVED_FROM":     { color:"#14b8a6", dash:"1,2",  width:1.8 },
   "EMBEDDED_BY":      { color:"#0ea5e9", dash:"3,3",  width:1.8 },
   "FINETUNED_ON":     { color:"#ec4899", dash:"6,2",  width:2.0 },
   "HAD_MEMBER":      { color:"#06b6d4", dash:"2,2",  width:1.2 },
@@ -32,6 +34,7 @@ const EDGE_LEGEND = [
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
   { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
   { key:"ENABLES",          label:"ENABLES" },
+  { key:"DERIVED_FROM",     label:"DERIVED_FROM" },
   { key:"EMBEDDED_BY",      label:"EMBEDDED_BY" },
   { key:"FINETUNED_ON",     label:"FINETUNED_ON" },
   { key:"HAD_MEMBER",       label:"HAD_MEMBER" },
