@@ -521,7 +521,7 @@ const makeSplitNode = (datasetId, splitType) => {
   const totalCount = assignment?.sampleIds?.length ?? 0;
   splitNodes.push({
     id,
-    label: `${base?.label ?? datasetId}\\n(${splitType})`,
+    label: `${base?.label ?? datasetId} (${splitType})`,
     type: "ProcessedData",
     detail: {
       ...(base?.detail ?? {}),
