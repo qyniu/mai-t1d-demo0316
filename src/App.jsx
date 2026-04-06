@@ -1093,6 +1093,16 @@ function queryGraph(intent, params) {
         }
       }
 
+      if (!mcId && typeof params.nodeId === "string") {
+        const node = resolveNode(params.nodeId);
+        if (node?.type === "ModelCard") {
+          mcId = node.id;
+        } else if (node?.type === "Model" || node?.type === "FineTunedModel") {
+          const modelCardEdge = EDGES.find(e => e.label==="DOCUMENTED_BY" && edgeSrcId(e)===node.id);
+          if (modelCardEdge) mcId = edgeTgtId(modelCardEdge);
+        }
+      }
+
       const linkedEdges = EDGES.filter(e => e.label==="LINKED_TO" && edgeSrcId(e)===mcId);
       const cards = linkedEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
       return { rows: cards.map(c=>({ id:c.id, label:labelSingleLine(c.label), detail:c.detail })) };
@@ -1134,7 +1144,7 @@ const AGENT_TOOLS = [
   { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
       intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail"], description:"The query pattern to execute" },
-      params:{ type:"object", description:"Parameters for the query, e.g. {modelId:'model_scfm'} or {datasetId:'proc_scrna'} or {nodeId:'model_genomic'} or {query:'search string'}" }
+      params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
     }, required:["intent","params"] }
   }
 ];
