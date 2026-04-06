@@ -16,7 +16,7 @@ const TYPE = {
 
 const EDGE_STYLE = {
   "USED":             { color:"#3b82f6", dash:"none", width:1.8 },
-  "WAS_GENERATED_BY": { color:"#22c55e", dash:"none", width:1.8 },
+  "GENERATED_BY":     { color:"#22c55e", dash:"none", width:1.8 },
   "TRAINED_ON":       { color:"#8b5cf6", dash:"none", width:2.2 },
   "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
   "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
@@ -29,7 +29,7 @@ const EDGE_STYLE = {
 
 const EDGE_LEGEND = [
   { key:"USED",             label:"USED" },
-  { key:"WAS_GENERATED_BY", label:"GENERATED_BY" },
+  { key:"GENERATED_BY", label:"GENERATED_BY" },
   { key:"TRAINED_ON",       label:"TRAINED_ON" },
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
   { key:"LINKED_TO",        label:"LINKED_TO" },
@@ -492,7 +492,7 @@ function ProvLogView() {
 function computeImpact(triggerId, eventType) {
   const affected = new Set();
   const outdated  = new Set();
-  const downEdges = ["WAS_GENERATED_BY","TRAINED_ON","DOCUMENTED_BY","LINKED_TO","ENABLES"];
+  const downEdges = ["GENERATED_BY","TRAINED_ON","DOCUMENTED_BY","LINKED_TO","ENABLES"];
   const traverse = (id) => {
     EDGES.forEach(e => {
       const src = edgeSrcId(e);
@@ -987,7 +987,9 @@ function queryGraph(intent, params) {
     }
     case "pipeline_for_dataset": {
       const datasetId = params.datasetId;
-      const genEdge = EDGES.find(e => e.label==="WAS_GENERATED_BY" && edgeTgtId(e)===datasetId);
+      const genEdge = EDGES.find(
+        e => (e.label==="GENERATED_BY" || e.label==="WAS_GENERATED_BY") && edgeTgtId(e)===datasetId
+      );
       if (!genEdge) return { rows:[] };
       const pipeline = NODES.find(n=>n.id===edgeSrcId(genEdge));
       return { rows: pipeline ? [{ id:pipeline.id, label:labelSingleLine(pipeline.label), detail:pipeline.detail }] : [] };
@@ -1006,7 +1008,7 @@ function queryGraph(intent, params) {
         const node = NODES.find(n=>n.id===id); if(!node) return;
         chain.push({ id, label:labelSingleLine(node.label), type:node.type });
         EDGES.forEach(e => {
-          if (edgeTgtId(e)===id && ["USED","WAS_GENERATED_BY","TRAINED_ON"].includes(e.label)) traverse(edgeSrcId(e));
+          if (edgeTgtId(e)===id && ["USED","GENERATED_BY","WAS_GENERATED_BY","TRAINED_ON"].includes(e.label)) traverse(edgeSrcId(e));
         });
       };
       traverse(nodeId);
