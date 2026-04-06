@@ -71,6 +71,18 @@ import {
   HISTOLOGY_COHORT_NODE,
   HISTOLOGY_COHORT_MEMBER_EDGES,
 } from "./histologyNodes";
+import {
+  CODEX_NODES,
+  CODEX_HAD_MEMBER_EDGES,
+  CODEX_COHORT_NODE,
+  CODEX_COHORT_MEMBER_EDGES,
+} from "./codexNodes";
+import {
+  IMC_NODES,
+  IMC_HAD_MEMBER_EDGES,
+  IMC_COHORT_NODE,
+  IMC_COHORT_MEMBER_EDGES,
+} from "./imcNodes";
 
 const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
 const normalizePairContext = (detail = {}) => {
@@ -170,6 +182,10 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Pipeline":"FastQC + MiXCR pipeline", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Metadata":"Missing in Data Track", "Contact":"Adil Mohammed", "Email":"aim4007@med.cornell.edu; am2832@cornell.edu", "Data Status":"Partial — Metadata & Documents Missing" }},
   { id:"qc_histology", label:"Histology QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Pipeline":"Not needed", "Path":"https://wcm.box.com/s/o6nv0b0w4nityjugkh7ctp1wc7mkljwo", "Documents":"H&E Axioscan raw .czi + QuPath project", "Contact":"Sally Lee", "Email":"sl2767@cornell.edu", "Data Status":"Partial — metadata missing" }},
+  { id:"qc_codex", label:"CODEX QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"Missing in Data Track", "Path":"/nfs/turbo/umms-drjieliu1/projects/HPAP-Spatial/CODEX/export", "Metadata":"/nfs/turbo/umms-drjieliu1/projects/HPAP-Spatial/CODEX/export_metadata", "Contact":"Yiicheng Tao", "Email":"N/A", "Data Status":"Partial — Pipeline & QC/Metadata formally missing" }},
+  { id:"qc_imc", label:"IMC QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"bodenmillergroup.github.io/ImcSegmentationPipeline (GitHub: BodenmillerGroup/ImcSegmentationPipeline)", "Path":"N/A", "Metadata":"Missing in Data Track", "Contact":"Yicheng Tao", "Email":"yctao@umich.edu", "Data Status":"Partial — Only pipeline submitted; data/metadata missing" }},
 
   { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Metadata":"QC metadata + Raw metadata (Google Sheets links)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
@@ -195,6 +211,10 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Pipeline":"FastQC + MiXCR", "Contact":"Adil Mohammed", "Email":"aim4007@med.cornell.edu; am2832@cornell.edu", "Data Status":"Partial — Metadata & Documents Missing" }},
   { id:"proc_histology_v1", label:"Histology Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"https://wcm.box.com/s/o6nv0b0w4nityjugkh7ctp1wc7mkljwo", "Data":"H&E Axioscan raw .czi + QuPath project", "Contact":"Sally Lee", "Email":"sl2767@cornell.edu", "Data Status":"Partial — metadata missing" }},
+  { id:"proc_codex_v1", label:"CODEX Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu1/projects/HPAP-Spatial/CODEX/export", "Metadata":"/nfs/turbo/umms-drjieliu1/projects/HPAP-Spatial/CODEX/export_metadata", "Storage":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/CODEX/ ; /nfs/turbo/umms-drjieliu1/projects/HPAP-Spatial/CODEX", "Contact":"Yiicheng Tao", "Email":"N/A", "Data Status":"Partial — formal re-submission needed" }},
+  { id:"proc_imc_v1", label:"IMC Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"N/A", "Pipeline":"ImcSegmentationPipeline", "Metadata":"Missing in Data Track", "Contact":"Yicheng Tao", "Email":"yctao@umich.edu", "Data Status":"Partial — data & metadata missing in current submission" }},
   { id:"dc_bulk_rna_v1", label:"Dataset Card\n(Bulk RNA v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/bulk_rna_v1.0.jsonld", "Author":"Dongliang Leng", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Known biases":"Exocrine-enriched samples in subset of donors", "Status":"Draft", "Updated":"2026-04-03" }},
   { id:"dc_bulk_atac_v1", label:"Dataset Card\n(Bulk ATAC v1.0)", type:"DatasetCard",
@@ -219,6 +239,10 @@ export const NODES = [
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/tcr_seq_v1.0.jsonld", "Author":"Adil Mohammed", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Pipeline":"FastQC + MiXCR", "Storage":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Data status":"Partial — Metadata & Documents Missing", "Status":"Draft", "Updated":"2026-04-06" }},
   { id:"dc_histology_v1", label:"Dataset Card\n(Histology v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/histology_v1.0.jsonld", "Author":"Sally Lee", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Storage":"https://wcm.box.com/s/o6nv0b0w4nityjugkh7ctp1wc7mkljwo", "Documents":"H&E Axioscan .czi + QuPath project", "Data status":"Partial — metadata missing", "Status":"Draft", "Updated":"2026-04-06" }},
+  { id:"dc_codex_v1", label:"Dataset Card\n(CODEX v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/codex_v1.0.jsonld", "Author":"Yiicheng Tao", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Storage":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/CODEX/ ; /nfs/turbo/umms-drjieliu1/projects/HPAP-Spatial/CODEX", "Known issues":"Pipeline and QC/metadata were not formally submitted in Data Track columns", "Status":"Draft", "Updated":"2026-04-06" }},
+  { id:"dc_imc_v1", label:"Dataset Card\n(IMC v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/imc_v1.0.jsonld", "Author":"Yicheng Tao", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Pipeline":"ImcSegmentationPipeline (BodenmillerGroup)", "Known issues":"Only pipeline submitted in Data Track; data and metadata paths missing", "Status":"Draft", "Updated":"2026-04-06" }},
 
 
   { id:"model_scfm",    label:"Single-cell FM v1\n(EpiAgent)", type:"Model",
@@ -269,6 +293,8 @@ export const NODES = [
   BCR_SEQ_COHORT_NODE,
   TCR_SEQ_COHORT_NODE,
   HISTOLOGY_COHORT_NODE,
+  CODEX_COHORT_NODE,
+  IMC_COHORT_NODE,
   ...HPAP_DONOR_NODES,
   ...FILTERED_BULK_RNA_NODES,
   ...FILTERED_BULK_ATAC_NODES,
@@ -282,6 +308,8 @@ export const NODES = [
   ...BCR_SEQ_NODES,
   ...TCR_SEQ_NODES,
   ...HISTOLOGY_NODES,
+  ...CODEX_NODES,
+  ...IMC_NODES,
 ];
 
 export const EDGES = [
@@ -297,6 +325,8 @@ export const EDGES = [
   { source:"cohort_bcr_seq", target:"qc_bcr_seq", label:"USED" },
   { source:"cohort_tcr_seq", target:"qc_tcr_seq", label:"USED" },
   { source:"cohort_histology", target:"qc_histology", label:"USED" },
+  { source:"cohort_codex", target:"qc_codex", label:"USED" },
+  { source:"cohort_imc", target:"qc_imc", label:"USED" },
   { source:"qc_bulk_rna", target:"proc_bulk_rna_v1", label:"GENERATED_BY" },
   { source:"qc_bulk_atac", target:"proc_bulk_atac_v1", label:"GENERATED_BY" },
   { source:"qc_scrna", target:"proc_scrna_v1", label:"GENERATED_BY" },
@@ -309,6 +339,8 @@ export const EDGES = [
   { source:"qc_bcr_seq", target:"proc_bcr_seq_v1", label:"GENERATED_BY" },
   { source:"qc_tcr_seq", target:"proc_tcr_seq_v1", label:"GENERATED_BY" },
   { source:"qc_histology", target:"proc_histology_v1", label:"GENERATED_BY" },
+  { source:"qc_codex", target:"proc_codex_v1", label:"GENERATED_BY" },
+  { source:"qc_imc", target:"proc_imc_v1", label:"GENERATED_BY" },
   { source:"proc_bulk_rna_v1", target:"dc_bulk_rna_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_atac_v1", target:"dc_bulk_atac_v1", label:"DOCUMENTED_BY" },
   { source:"proc_scrna_v1", target:"dc_scrna_v1", label:"DOCUMENTED_BY" },
@@ -321,6 +353,8 @@ export const EDGES = [
   { source:"proc_bcr_seq_v1", target:"dc_bcr_seq_v1", label:"DOCUMENTED_BY" },
   { source:"proc_tcr_seq_v1", target:"dc_tcr_seq_v1", label:"DOCUMENTED_BY" },
   { source:"proc_histology_v1", target:"dc_histology_v1", label:"DOCUMENTED_BY" },
+  { source:"proc_codex_v1", target:"dc_codex_v1", label:"DOCUMENTED_BY" },
+  { source:"proc_imc_v1", target:"dc_imc_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_rna_v1", target:"model_genomic", label:"TRAINED_ON",
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"Bulk RNA-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
   { source:"proc_bulk_atac_v1", target:"model_genomic", label:"TRAINED_ON",
@@ -416,6 +450,8 @@ export const EDGES = [
   ...BCR_SEQ_HAD_MEMBER_EDGES,
   ...TCR_SEQ_HAD_MEMBER_EDGES,
   ...HISTOLOGY_HAD_MEMBER_EDGES,
+  ...CODEX_HAD_MEMBER_EDGES,
+  ...IMC_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
   ...FILTERED_SCRNA_COHORT_MEMBER_EDGES,
@@ -428,6 +464,8 @@ export const EDGES = [
   ...BCR_SEQ_COHORT_MEMBER_EDGES,
   ...TCR_SEQ_COHORT_MEMBER_EDGES,
   ...HISTOLOGY_COHORT_MEMBER_EDGES,
+  ...CODEX_COHORT_MEMBER_EDGES,
+  ...IMC_COHORT_MEMBER_EDGES,
 ];
 
 
