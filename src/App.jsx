@@ -871,6 +871,8 @@ function GraphView({ graphMode, highlightLinked }) {
   },[selected, selEdge, highlightLinked]);
 
   const connEdges=selected?EDGES.filter(e=>(e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)) && !(graphMode==="full" && e.hiddenInFullGraph)):[];
+  const hiddenHadMemberOut=selected?EDGES.filter(e=>e.label==="HAD_MEMBER" && e.hiddenInFullGraph && edgeSrcId(e)===selected.id):[];
+  const hiddenHadMemberIn=selected?EDGES.filter(e=>e.label==="HAD_MEMBER" && e.hiddenInFullGraph && edgeTgtId(e)===selected.id):[];
   const srcNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
   const tgtNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
 
@@ -928,6 +930,35 @@ function GraphView({ graphMode, highlightLinked }) {
                 </div>
               ))}
             </div>
+            {(hiddenHadMemberOut.length>0 || hiddenHadMemberIn.length>0) && (
+              <>
+                <div style={{ fontSize:p?11:9, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:7 }}>HAD_MEMBER (Hidden in Full graph)</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:14 }}>
+                  {hiddenHadMemberOut.map((e,i)=>{
+                    const other=NODES.find(n=>n.id===edgeTgtId(e));
+                    if(!other) return null;
+                    return(
+                      <div key={`hmo-${i}`} onClick={()=>setSelected(other)} style={{ display:"flex", alignItems:"center", gap:6, background:"#f8fafc", border:"1px solid #06b6d433", borderRadius:5, padding:"5px 8px", cursor:"pointer" }}>
+                        <span style={{ color:"#0891b2", fontStyle:"italic", fontSize:p?10:8, fontWeight:700, flexShrink:0 }}>-&gt; HAD_MEMBER</span>
+                        <span style={{ fontSize:13 }}>{TYPE[other.type]?.icon}</span>
+                        <span style={{ color:"#374151", fontSize:p?12.5:10.5, fontWeight:600, fontFamily:"Georgia,serif" }}>{labelSingleLine(other.label)}</span>
+                      </div>
+                    );
+                  })}
+                  {hiddenHadMemberIn.map((e,i)=>{
+                    const other=NODES.find(n=>n.id===edgeSrcId(e));
+                    if(!other) return null;
+                    return(
+                      <div key={`hmi-${i}`} onClick={()=>setSelected(other)} style={{ display:"flex", alignItems:"center", gap:6, background:"#f8fafc", border:"1px solid #06b6d433", borderRadius:5, padding:"5px 8px", cursor:"pointer" }}>
+                        <span style={{ color:"#0891b2", fontStyle:"italic", fontSize:p?10:8, fontWeight:700, flexShrink:0 }}>&lt;- HAD_MEMBER</span>
+                        <span style={{ fontSize:13 }}>{TYPE[other.type]?.icon}</span>
+                        <span style={{ color:"#374151", fontSize:p?12.5:10.5, fontWeight:600, fontFamily:"Georgia,serif" }}>{labelSingleLine(other.label)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
             {connEdges.length>0 && (
               <>
                 <div style={{ fontSize:p?11:9, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:7 }}>Connections ({connEdges.length})</div>
