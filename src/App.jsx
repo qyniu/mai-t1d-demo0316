@@ -18,6 +18,7 @@ const EDGE_STYLE = {
   "USED":             { color:"#3b82f6", dash:"none", width:1.8 },
   "GENERATED_BY":     { color:"#22c55e", dash:"none", width:1.8 },
   "TRAINED_ON":       { color:"#8b5cf6", dash:"none", width:2.2 },
+  "EVALUATED_ON":     { color:"#6366f1", dash:"none", width:2.0 },
   "DOCUMENTED_BY":    { color:"#f59e0b", dash:"5,3",  width:1.6 },
   "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
   "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
@@ -31,6 +32,7 @@ const EDGE_LEGEND = [
   { key:"USED",             label:"USED" },
   { key:"GENERATED_BY", label:"GENERATED_BY" },
   { key:"TRAINED_ON",       label:"TRAINED_ON" },
+  { key:"EVALUATED_ON",     label:"EVALUATED_ON" },
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
   { key:"LINKED_TO",        label:"LINKED_TO" },
   { key:"ENABLES",          label:"ENABLES" },
@@ -492,7 +494,7 @@ function ProvLogView() {
 function computeImpact(triggerId, eventType) {
   const affected = new Set();
   const outdated  = new Set();
-  const downEdges = ["GENERATED_BY","TRAINED_ON","DOCUMENTED_BY","LINKED_TO","ENABLES"];
+  const downEdges = ["GENERATED_BY","TRAINED_ON","EVALUATED_ON","DOCUMENTED_BY","LINKED_TO","ENABLES"];
   const traverse = (id) => {
     EDGES.forEach(e => {
       const src = edgeSrcId(e);
@@ -1008,7 +1010,7 @@ function queryGraph(intent, params) {
         const node = NODES.find(n=>n.id===id); if(!node) return;
         chain.push({ id, label:labelSingleLine(node.label), type:node.type });
         EDGES.forEach(e => {
-          if (edgeTgtId(e)===id && ["USED","GENERATED_BY","WAS_GENERATED_BY","TRAINED_ON"].includes(e.label)) traverse(edgeSrcId(e));
+          if (edgeTgtId(e)===id && ["USED","GENERATED_BY","WAS_GENERATED_BY","TRAINED_ON","EVALUATED_ON"].includes(e.label)) traverse(edgeSrcId(e));
         });
       };
       traverse(nodeId);

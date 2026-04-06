@@ -156,7 +156,7 @@ const FILTERED_SCATAC_COHORT_MEMBER_EDGES = SCATAC_COHORT_MEMBER_EDGES.filter((e
   filteredScatacIds.has(e.target)
 );
 
-export const NODES = [
+const BASE_NODES = [
 
   { id:"qc_bulk_rna", label:"Bulk RNA QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Pipeline":"✅ Drive: drive.google.com/…/1GX2GrBNQ0v…", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
@@ -320,7 +320,7 @@ export const NODES = [
   ...IMC_NODES,
 ];
 
-export const EDGES = [
+const BASE_EDGES = [
   { source:"cohort_bulk_rna_seq", target:"qc_bulk_rna", label:"USED" },
   { source:"cohort_bulk_atac_seq", target:"qc_bulk_atac", label:"USED" },
   { source:"cohort_scrna_seq", target:"qc_scrna", label:"USED" },
@@ -492,6 +492,84 @@ export const EDGES = [
   ...CODEX_COHORT_MEMBER_EDGES,
   ...IMC_COHORT_MEMBER_EDGES,
 ];
+
+const TRAIN_SPLIT_LABEL = "training";
+const EVAL_SPLIT_LABEL = "evaluation";
+const TRAIN_SPLIT_RATIO = "80%";
+const EVAL_SPLIT_RATIO = "20%";
+
+const nodeById = new Map(BASE_NODES.map((n) => [n.id, n]));
+const splitNodes = [];
+const splitEdges = [];
+const splitNodeIds = new Set();
+const splitDeriveKeys = new Set();
+
+const makeSplitNode = (datasetId, splitType) => {
+  const id = `${datasetId}__${splitType}`;
+  if (splitNodeIds.has(id)) return id;
+  splitNodeIds.add(id);
+  const base = nodeById.get(datasetId);
+  const ratio = splitType === TRAIN_SPLIT_LABEL ? TRAIN_SPLIT_RATIO : EVAL_SPLIT_RATIO;
+  splitNodes.push({
+    id,
+    label: `${base?.label ?? datasetId}\\n(${splitType})`,
+    type: "ProcessedData",
+    detail: {
+      ...(base?.detail ?? {}),
+      "Parent dataset": datasetId,
+      "Split": splitType,
+      "Split ratio": ratio,
+    },
+  });
+  return id;
+};
+
+for (const e of BASE_EDGES) {
+  if (e.label !== "TRAINED_ON") continue;
+  const datasetId = typeof e.source === "object" ? e.source.id : e.source;
+  const modelId = typeof e.target === "object" ? e.target.id : e.target;
+  const trainId = makeSplitNode(datasetId, TRAIN_SPLIT_LABEL);
+  const evalId = makeSplitNode(datasetId, EVAL_SPLIT_LABEL);
+
+  const trainDeriveKey = `${datasetId}->${trainId}`;
+  if (!splitDeriveKeys.has(trainDeriveKey)) {
+    splitDeriveKeys.add(trainDeriveKey);
+    splitEdges.push({
+      source: datasetId,
+      target: trainId,
+      label: "DERIVED_FROM",
+      split: { Type: TRAIN_SPLIT_LABEL, Ratio: TRAIN_SPLIT_RATIO },
+    });
+  }
+  const evalDeriveKey = `${datasetId}->${evalId}`;
+  if (!splitDeriveKeys.has(evalDeriveKey)) {
+    splitDeriveKeys.add(evalDeriveKey);
+    splitEdges.push({
+      source: datasetId,
+      target: evalId,
+      label: "DERIVED_FROM",
+      split: { Type: EVAL_SPLIT_LABEL, Ratio: EVAL_SPLIT_RATIO },
+    });
+  }
+
+  splitEdges.push({
+    ...e,
+    source: trainId,
+    target: modelId,
+    train: { ...(e.train ?? {}), "Dataset split": `${TRAIN_SPLIT_LABEL} (${TRAIN_SPLIT_RATIO})` },
+  });
+  splitEdges.push({
+    source: evalId,
+    target: modelId,
+    label: "EVALUATED_ON",
+    eval: { ...(e.train ?? {}), "Dataset split": `${EVAL_SPLIT_LABEL} (${EVAL_SPLIT_RATIO})` },
+  });
+}
+
+const passthroughEdges = BASE_EDGES.filter((e) => e.label !== "TRAINED_ON");
+
+export const NODES = [...BASE_NODES, ...splitNodes];
+export const EDGES = [...passthroughEdges, ...splitEdges];
 
 
 
