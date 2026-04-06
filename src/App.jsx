@@ -1001,9 +1001,23 @@ function GraphView({ graphMode, highlightLinked }) {
 
 //  GRAPH QUERY ENGINE 
 function queryGraph(intent, params) {
+  const resolveNode = (raw, preferredTypes=[]) => {
+    const q = String(raw ?? "").trim().toLowerCase();
+    if (!q) return null;
+    const byId = NODES.find(n => n.id.toLowerCase() === q);
+    if (byId) return byId;
+    const pool = preferredTypes.length ? NODES.filter(n => preferredTypes.includes(n.type)) : NODES;
+    const byLabelExact = pool.find(n => labelSingleLine(n.label).toLowerCase() === q);
+    if (byLabelExact) return byLabelExact;
+    return pool.find(n => labelSingleLine(n.label).toLowerCase().includes(q)) || null;
+  };
+
   switch (intent) {
     case "datasets_for_model": {
-      const modelId = params.modelId;
+      const modelNode =
+        resolveNode(params.modelId, ["Model", "FineTunedModel"]) ||
+        resolveNode(params.query, ["Model", "FineTunedModel"]);
+      const modelId = modelNode?.id || params.modelId;
       const trainEdges = EDGES.filter(e => e.label==="TRAINED_ON" && edgeTgtId(e)===modelId);
       const datasets = trainEdges.map(e => {
         const node = NODES.find(n=>n.id===edgeSrcId(e));
@@ -1012,7 +1026,10 @@ function queryGraph(intent, params) {
       return { rows: datasets.map(d=>({ id:d.node.id, label:labelSingleLine(d.node.label), type:d.node.type, trainMeta:d.trainMeta })) };
     }
     case "models_for_dataset": {
-      const datasetId = params.datasetId;
+      const datasetNode =
+        resolveNode(params.datasetId, ["ProcessedData"]) ||
+        resolveNode(params.query, ["ProcessedData"]);
+      const datasetId = datasetNode?.id || params.datasetId;
       const trainEdges = EDGES.filter(e => e.label==="TRAINED_ON" && edgeSrcId(e)===datasetId);
       const models = trainEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
       return { rows: models.map(m=>({ id:m.id, label:labelSingleLine(m.label), type:m.type, detail:m.detail })) };
@@ -1022,7 +1039,10 @@ function queryGraph(intent, params) {
       return { rows: models.map(m=>({ id:m.id, label:labelSingleLine(m.label), compliance_hold:m.detail["Compliance hold"], status:m.detail["Status"] })) };
     }
     case "pipeline_for_dataset": {
-      const datasetId = params.datasetId;
+      const datasetNode =
+        resolveNode(params.datasetId, ["ProcessedData"]) ||
+        resolveNode(params.query, ["ProcessedData"]);
+      const datasetId = datasetNode?.id || params.datasetId;
       const genEdge = EDGES.find(
         e => (e.label==="GENERATED_BY" || e.label==="WAS_GENERATED_BY") && edgeTgtId(e)===datasetId
       );
@@ -1031,13 +1051,17 @@ function queryGraph(intent, params) {
       return { rows: pipeline ? [{ id:pipeline.id, label:labelSingleLine(pipeline.label), detail:pipeline.detail }] : [] };
     }
     case "downstream_tasks": {
-      const modelId = params.modelId;
+      const modelNode =
+        resolveNode(params.modelId, ["Model", "FineTunedModel"]) ||
+        resolveNode(params.query, ["Model", "FineTunedModel"]);
+      const modelId = modelNode?.id || params.modelId;
       const enableEdges = EDGES.filter(e => e.label==="ENABLES" && edgeSrcId(e)===modelId);
       const tasks = enableEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
       return { rows: tasks.map(t=>({ id:t.id, label:labelSingleLine(t.label), detail:t.detail })) };
     }
     case "provenance_chain": {
-      const nodeId = params.nodeId;
+      const node = resolveNode(params.nodeId) || resolveNode(params.query);
+      const nodeId = node?.id || params.nodeId;
       const visited = new Set(); const chain = [];
       const traverse = (id) => {
         if (visited.has(id)) return; visited.add(id);
@@ -1051,13 +1075,30 @@ function queryGraph(intent, params) {
       return { rows: chain };
     }
     case "card_links": {
-      const mcId = params.mcId;
+      let mcId = (
+        resolveNode(params.mcId, ["ModelCard"]) ||
+        resolveNode(params.query, ["ModelCard"])
+      )?.id || params.mcId;
+
+      if (mcId && !NODES.find(n => n.id===mcId && n.type==="ModelCard")) {
+        const modelCardEdge = EDGES.find(e => e.label==="DOCUMENTED_BY" && edgeSrcId(e)===mcId);
+        if (modelCardEdge) mcId = edgeTgtId(modelCardEdge);
+      }
+
+      if (!mcId) {
+        const modelNode = resolveNode(params.modelId, ["Model", "FineTunedModel"]) || resolveNode(params.query, ["Model", "FineTunedModel"]);
+        if (modelNode) {
+          const modelCardEdge = EDGES.find(e => e.label==="DOCUMENTED_BY" && edgeSrcId(e)===modelNode.id);
+          if (modelCardEdge) mcId = edgeTgtId(modelCardEdge);
+        }
+      }
+
       const linkedEdges = EDGES.filter(e => e.label==="LINKED_TO" && edgeSrcId(e)===mcId);
       const cards = linkedEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
       return { rows: cards.map(c=>({ id:c.id, label:labelSingleLine(c.label), detail:c.detail })) };
     }
     case "node_detail": {
-      const node = NODES.find(n=>n.id===params.nodeId || labelSingleLine(n.label).toLowerCase().includes(params.query?.toLowerCase()));
+      const node = resolveNode(params.nodeId) || resolveNode(params.query);
       return { rows: node ? [{ id:node.id, label:labelSingleLine(node.label), type:node.type, detail:node.detail }] : [] };
     }
     default:
