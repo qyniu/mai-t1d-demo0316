@@ -21,6 +21,7 @@ const EDGE_STYLE = {
   "LINKED_TO":        { color:"#f43f5e", dash:"8,3",  width:2.2 },
   "ENABLES":          { color:"#94a3b8", dash:"4,2",  width:1.4 },
   "EMBEDDED_BY":      { color:"#0ea5e9", dash:"3,3",  width:1.8 },
+  "FINETUNED_ON":     { color:"#ec4899", dash:"6,2",  width:2.0 },
   "HAD_MEMBER":      { color:"#06b6d4", dash:"2,2",  width:1.2 },
 };
 
@@ -32,6 +33,7 @@ const EDGE_LEGEND = [
   { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
   { key:"ENABLES",          label:"ENABLES" },
   { key:"EMBEDDED_BY",      label:"EMBEDDED_BY" },
+  { key:"FINETUNED_ON",     label:"FINETUNED_ON" },
   { key:"HAD_MEMBER",       label:"HAD_MEMBER" },
 ];
 
@@ -50,9 +52,9 @@ const isCohortNode = id => String(id).startsWith("cohort_");
 //  GRAPH MODES 
 const GRAPH_MODES = {
   full:    { label:"Full graph",            ids: NODES.map(n=>n.id) },
-  scfm:   { label:"Single-cell FM lineage", ids:["cohort_snmultiomics","qc_snmultiomics","proc_snmultiomics_v1","dc_snmultiomics_v1","emb_genomic_all_modalities_v1","model_scfm","mc_scfm","task_celltype","task_deconv","task_5"] },
+  scfm:   { label:"Single-cell FM lineage", ids:["cohort_snmultiomics","qc_snmultiomics","proc_snmultiomics_v1","dc_snmultiomics_v1","emb_genomic_all_modalities_v1","model_scfm","model_scfm_ft_v1","mc_scfm","task_celltype","task_deconv","task_5"] },
   genomic:{ label:"Genomic FM lineage",    ids:["cohort_bulk_rna_seq","qc_bulk_rna","proc_bulk_rna_v1","dc_bulk_rna_v1","cohort_bulk_atac_seq","qc_bulk_atac","proc_bulk_atac_v1","dc_bulk_atac_v1","cohort_scrna_seq","qc_scrna","proc_scrna_v1","dc_scrna_v1","cohort_scatac_seq","qc_scatac","proc_scatac_v1","dc_scatac_v1","cohort_snmultiomics","qc_snmultiomics","proc_snmultiomics_v1","dc_snmultiomics_v1","emb_genomic_all_modalities_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
-  hpap002:{ label:"HPAP-002 downstream",   ids:["emb_genomic_all_modalities_v1","model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome","task_5"] },
+  hpap002:{ label:"HPAP-002 downstream",   ids:["emb_genomic_all_modalities_v1","model_scfm","model_scfm_ft_v1","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome","task_5"] },
 };
 
 //  IMPACT SCENARIOS 
