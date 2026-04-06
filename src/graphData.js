@@ -29,6 +29,12 @@ import {
   SNMULTIOMICS_COHORT_NODE,
   SNMULTIOMICS_COHORT_MEMBER_EDGES,
 } from "./snMultiomicsNodes";
+import {
+  CITE_SEQ_PROTEIN_NODES,
+  CITE_SEQ_PROTEIN_HAD_MEMBER_EDGES,
+  CITE_SEQ_PROTEIN_COHORT_NODE,
+  CITE_SEQ_PROTEIN_COHORT_MEMBER_EDGES,
+} from "./citeSeqProteinNodes";
 
 const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
 const normalizePairContext = (detail = {}) => {
@@ -114,6 +120,8 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Pipeline":"github.com/PanKbase/HPAP-scATAC-seq", "Path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Contact":"PanKbase/Kai Liu", "Email":"N/A", "Data Status":"Partial — QC Data & Metadata & Documents Missing" }},
   { id:"qc_snmultiomics", label:"snMultiomics QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Pipeline":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/snMultiome(ATAC+RNA)/Annotation/snmultiome pipeline.docx", "Path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Contact":"Haoxuan Zeng", "Email":"N/A", "Data Status":"Partial — Pipeline & Metadata Missing" }},
+  { id:"qc_cite_seq", label:"CITE-seq QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"Not submitted in Data Track", "Path":"—", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/CITEseq/adt_marker_list.csv", "Contact":"—", "Email":"—", "Data Status":"Not Submitted" }},
 
   { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Metadata":"QC metadata + Raw metadata (Google Sheets links)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
@@ -125,6 +133,8 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Metadata":"QC data path missing in Data Track", "Contact":"PanKbase/Kai Liu", "Email":"N/A" }},
   { id:"proc_snmultiomics_v1", label:"snMultiomics Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/snMultiome(ATAC+RNA)/Annotation/celltype_summary.csv", "Contact":"Haoxuan Zeng", "Email":"N/A" }},
+  { id:"proc_cite_seq_v1", label:"CITE-seq Protein Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"—", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/CITEseq/adt_marker_list.csv", "Contact":"—", "Email":"—", "Data Status":"Not Submitted in Data Track" }},
   { id:"dc_bulk_rna_v1", label:"Dataset Card\n(Bulk RNA v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/bulk_rna_v1.0.jsonld", "Author":"Dongliang Leng", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Known biases":"Exocrine-enriched samples in subset of donors", "Status":"Draft", "Updated":"2026-04-03" }},
   { id:"dc_bulk_atac_v1", label:"Dataset Card\n(Bulk ATAC v1.0)", type:"DatasetCard",
@@ -158,12 +168,14 @@ export const NODES = [
   SCRNA_COHORT_NODE,
   SCATAC_COHORT_NODE,
   SNMULTIOMICS_COHORT_NODE,
+  CITE_SEQ_PROTEIN_COHORT_NODE,
   ...HPAP_DONOR_NODES,
   ...FILTERED_BULK_RNA_NODES,
   ...FILTERED_BULK_ATAC_NODES,
   ...FILTERED_SCRNA_NODES,
   ...FILTERED_SCATAC_NODES,
   ...SNMULTIOMICS_NODES,
+  ...CITE_SEQ_PROTEIN_NODES,
 ];
 
 export const EDGES = [
@@ -172,11 +184,13 @@ export const EDGES = [
   { source:"cohort_scrna_seq", target:"qc_scrna", label:"USED" },
   { source:"cohort_scatac_seq", target:"qc_scatac", label:"USED" },
   { source:"cohort_snmultiomics", target:"qc_snmultiomics", label:"USED" },
+  { source:"cohort_cite_seq_protein", target:"qc_cite_seq", label:"USED" },
   { source:"qc_bulk_rna", target:"proc_bulk_rna_v1", label:"GENERATED_BY" },
   { source:"qc_bulk_atac", target:"proc_bulk_atac_v1", label:"GENERATED_BY" },
   { source:"qc_scrna", target:"proc_scrna_v1", label:"GENERATED_BY" },
   { source:"qc_scatac", target:"proc_scatac_v1", label:"GENERATED_BY" },
   { source:"qc_snmultiomics", target:"proc_snmultiomics_v1", label:"GENERATED_BY" },
+  { source:"qc_cite_seq", target:"proc_cite_seq_v1", label:"GENERATED_BY" },
   { source:"proc_bulk_rna_v1", target:"dc_bulk_rna_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_atac_v1", target:"dc_bulk_atac_v1", label:"DOCUMENTED_BY" },
   { source:"proc_scrna_v1", target:"dc_scrna_v1", label:"DOCUMENTED_BY" },
@@ -226,11 +240,13 @@ export const EDGES = [
   ...FILTERED_SCRNA_HAD_MEMBER_EDGES,
   ...FILTERED_SCATAC_HAD_MEMBER_EDGES,
   ...SNMULTIOMICS_HAD_MEMBER_EDGES,
+  ...CITE_SEQ_PROTEIN_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
   ...FILTERED_SCRNA_COHORT_MEMBER_EDGES,
   ...FILTERED_SCATAC_COHORT_MEMBER_EDGES,
   ...SNMULTIOMICS_COHORT_MEMBER_EDGES,
+  ...CITE_SEQ_PROTEIN_COHORT_MEMBER_EDGES,
 ];
 
 
