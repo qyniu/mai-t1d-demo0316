@@ -23,6 +23,12 @@ import {
   SCATAC_COHORT_NODE,
   SCATAC_COHORT_MEMBER_EDGES,
 } from "./scAtacNodes";
+import {
+  SNMULTIOMICS_NODES,
+  SNMULTIOMICS_HAD_MEMBER_EDGES,
+  SNMULTIOMICS_COHORT_NODE,
+  SNMULTIOMICS_COHORT_MEMBER_EDGES,
+} from "./snMultiomicsNodes";
 
 const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
 const normalizePairContext = (detail = {}) => {
@@ -106,6 +112,8 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Pipeline":"Not submitted in Data Track", "Path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Contact":"PanKbase/Kai Liu", "Email":"N/A", "Data Status":"Partial — Pipeline & Metadata & Documents Missing" }},
   { id:"qc_scatac", label:"scATAC QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Pipeline":"github.com/PanKbase/HPAP-scATAC-seq", "Path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Contact":"PanKbase/Kai Liu", "Email":"N/A", "Data Status":"Partial — QC Data & Metadata & Documents Missing" }},
+  { id:"qc_snmultiomics", label:"snMultiomics QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/snMultiome(ATAC+RNA)/Annotation/snmultiome pipeline.docx", "Path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Contact":"Haoxuan Zeng", "Email":"N/A", "Data Status":"Partial — Pipeline & Metadata Missing" }},
 
   { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Metadata":"QC metadata + Raw metadata (Google Sheets links)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
@@ -115,6 +123,8 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Metadata":"Not submitted in Data Track", "Contact":"PanKbase/Kai Liu", "Email":"N/A" }},
   { id:"proc_scatac_v1", label:"scATAC-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Metadata":"QC data path missing in Data Track", "Contact":"PanKbase/Kai Liu", "Email":"N/A" }},
+  { id:"proc_snmultiomics_v1", label:"snMultiomics Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/snMultiome(ATAC+RNA)/Annotation/celltype_summary.csv", "Contact":"Haoxuan Zeng", "Email":"N/A" }},
   { id:"dc_bulk_rna_v1", label:"Dataset Card\n(Bulk RNA v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/bulk_rna_v1.0.jsonld", "Author":"Dongliang Leng", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Known biases":"Exocrine-enriched samples in subset of donors", "Status":"Draft", "Updated":"2026-04-03" }},
   { id:"dc_bulk_atac_v1", label:"Dataset Card\n(Bulk ATAC v1.0)", type:"DatasetCard",
@@ -123,9 +133,11 @@ export const NODES = [
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/scrna_seq_v1.0.jsonld", "Author":"PanKbase/Kai Liu", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Known biases":"Islet-focused tissue profile", "Status":"Draft", "Updated":"2026-04-05" }},
   { id:"dc_scatac_v1", label:"Dataset Card\n(scATAC-seq v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/scatac_seq_v1.0.jsonld", "Author":"PanKbase/Kai Liu", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Known biases":"Limited donor overlap with scRNA cohort", "Status":"Draft", "Updated":"2026-04-05" }},
+  { id:"dc_snmultiomics_v1", label:"Dataset Card\n(snMultiomics v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/snmultiomics_v1.0.jsonld", "Author":"Haoxuan Zeng", "Institution":"University of Michigan", "Consent":"Open (HPAP DUA)", "Known biases":"Multi-tissue composition varies by donor", "Status":"Draft", "Updated":"2026-04-05" }},
 
 
-  { id:"model_scfm",    label:"Single-cell FM v1\n(scFM-T1D)", type:"Model",
+  { id:"model_scfm",    label:"Single-cell FM v1\n(EpiAgent)", type:"Model",
     detail:{ "Version":"v1.0", "Architecture":"scGPT 70M params", "Cell-type F1 (macro)":"0.93", "Beta-cell F1":"0.95", "Alpha-cell F1":"0.92", "Eval set":"scRNA v2.1 (20% holdout)", "Lighthouse":"/lighthouse/mai-t1d/models/scfm_v1.0/", "Status":"Active", "Compliance hold":"false" }},
   { id:"model_genomic", label:"Genomic FM v1\n(EPCOT-v2)",     type:"Model",
     detail:{ "Version":"v1.0", "Architecture":"EPCOT multi-modal transformer", "AUROC (epigenome)":"0.91", "Pearson r (expression)":"0.87", "Eval set":"Multi-modal held-out", "Lighthouse":"/lighthouse/mai-t1d/models/genomic_v1.0/", "Status":"Active", "Compliance hold":"false" }},
@@ -147,11 +159,13 @@ export const NODES = [
   BULK_ATAC_COHORT_NODE,
   SCRNA_COHORT_NODE,
   SCATAC_COHORT_NODE,
+  SNMULTIOMICS_COHORT_NODE,
   ...HPAP_DONOR_NODES,
   ...FILTERED_BULK_RNA_NODES,
   ...FILTERED_BULK_ATAC_NODES,
   ...FILTERED_SCRNA_NODES,
   ...FILTERED_SCATAC_NODES,
+  ...SNMULTIOMICS_NODES,
 ];
 
 export const EDGES = [
@@ -159,14 +173,17 @@ export const EDGES = [
   { source:"cohort_bulk_atac_seq", target:"qc_bulk_atac", label:"USED" },
   { source:"cohort_scrna_seq", target:"qc_scrna", label:"USED" },
   { source:"cohort_scatac_seq", target:"qc_scatac", label:"USED" },
+  { source:"cohort_snmultiomics", target:"qc_snmultiomics", label:"USED" },
   { source:"qc_bulk_rna", target:"proc_bulk_rna_v1", label:"WAS_GENERATED_BY" },
   { source:"qc_bulk_atac", target:"proc_bulk_atac_v1", label:"WAS_GENERATED_BY" },
   { source:"qc_scrna", target:"proc_scrna_v1", label:"WAS_GENERATED_BY" },
   { source:"qc_scatac", target:"proc_scatac_v1", label:"WAS_GENERATED_BY" },
+  { source:"qc_snmultiomics", target:"proc_snmultiomics_v1", label:"WAS_GENERATED_BY" },
   { source:"proc_bulk_rna_v1", target:"dc_bulk_rna_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_atac_v1", target:"dc_bulk_atac_v1", label:"DOCUMENTED_BY" },
   { source:"proc_scrna_v1", target:"dc_scrna_v1", label:"DOCUMENTED_BY" },
   { source:"proc_scatac_v1", target:"dc_scatac_v1", label:"DOCUMENTED_BY" },
+  { source:"proc_snmultiomics_v1", target:"dc_snmultiomics_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_rna_v1", target:"model_genomic", label:"TRAINED_ON",
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"Bulk RNA-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
   { source:"proc_bulk_atac_v1", target:"model_genomic", label:"TRAINED_ON",
@@ -175,12 +192,15 @@ export const EDGES = [
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"scRNA-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Contact":"PanKbase/Kai Liu", "Email":"N/A" }},
   { source:"proc_scatac_v1", target:"model_genomic", label:"TRAINED_ON",
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"scATAC-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/luosanj/FM_diabetes/data/scATAC_RNA_pankbase", "Contact":"PanKbase/Kai Liu", "Email":"N/A" }},
+  { source:"proc_snmultiomics_v1", target:"model_scfm", label:"TRAINED_ON",
+    train:{ "Model version":"Single-cell FM v1 (EpiAgent)", "Architecture":"Single-cell foundation model", "Modality":"snMultiomics", "Data path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Contact":"Haoxuan Zeng", "Email":"N/A" }},
   { source:"model_scfm",    target:"mc_scfm",       label:"DOCUMENTED_BY" },
   { source:"model_genomic", target:"mc_genomic",    label:"DOCUMENTED_BY" },
   { source:"mc_genomic", target:"dc_bulk_rna_v1",  label:"LINKED_TO" },
   { source:"mc_genomic", target:"dc_bulk_atac_v1", label:"LINKED_TO" },
   { source:"mc_genomic", target:"dc_scrna_v1", label:"LINKED_TO" },
   { source:"mc_genomic", target:"dc_scatac_v1", label:"LINKED_TO" },
+  { source:"mc_scfm", target:"dc_snmultiomics_v1", label:"LINKED_TO" },
   { source:"model_scfm",    target:"task_celltype",  label:"ENABLES" },
   { source:"model_scfm",    target:"task_deconv",    label:"ENABLES" },
   { source:"model_genomic", target:"task_eqtl",      label:"ENABLES" },
@@ -189,10 +209,12 @@ export const EDGES = [
   ...FILTERED_BULK_ATAC_HAD_MEMBER_EDGES,
   ...FILTERED_SCRNA_HAD_MEMBER_EDGES,
   ...FILTERED_SCATAC_HAD_MEMBER_EDGES,
+  ...SNMULTIOMICS_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
   ...FILTERED_SCRNA_COHORT_MEMBER_EDGES,
   ...FILTERED_SCATAC_COHORT_MEMBER_EDGES,
+  ...SNMULTIOMICS_COHORT_MEMBER_EDGES,
 ];
 
 

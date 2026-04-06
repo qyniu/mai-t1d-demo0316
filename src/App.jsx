@@ -48,7 +48,7 @@ const isCohortNode = id => String(id).startsWith("cohort_");
 //  GRAPH MODES 
 const GRAPH_MODES = {
   full:    { label:"Full graph",            ids: NODES.map(n=>n.id) },
-  scfm:   { label:"Single-cell FM lineage", ids:["model_scfm","mc_scfm","task_celltype","task_deconv"] },
+  scfm:   { label:"Single-cell FM lineage", ids:["cohort_snmultiomics","qc_snmultiomics","proc_snmultiomics_v1","dc_snmultiomics_v1","model_scfm","mc_scfm","task_celltype","task_deconv"] },
   genomic:{ label:"Genomic FM lineage",    ids:["cohort_bulk_rna_seq","qc_bulk_rna","proc_bulk_rna_v1","dc_bulk_rna_v1","cohort_bulk_atac_seq","qc_bulk_atac","proc_bulk_atac_v1","dc_bulk_atac_v1","cohort_scrna_seq","qc_scrna","proc_scrna_v1","dc_scrna_v1","cohort_scatac_seq","qc_scatac","proc_scatac_v1","dc_scatac_v1","model_genomic","mc_genomic","task_eqtl","task_epigenome"] },
   hpap002:{ label:"HPAP-002 downstream",   ids:["model_scfm","model_genomic","mc_scfm","mc_genomic","task_celltype","task_deconv","task_eqtl","task_epigenome"] },
 };
