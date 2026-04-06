@@ -53,6 +53,18 @@ import {
   OXYGEN_CONSUMPTION_COHORT_NODE,
   OXYGEN_CONSUMPTION_COHORT_MEMBER_EDGES,
 } from "./oxygenConsumptionNodes";
+import {
+  BCR_SEQ_NODES,
+  BCR_SEQ_HAD_MEMBER_EDGES,
+  BCR_SEQ_COHORT_NODE,
+  BCR_SEQ_COHORT_MEMBER_EDGES,
+} from "./bcrSeqNodes";
+import {
+  TCR_SEQ_NODES,
+  TCR_SEQ_HAD_MEMBER_EDGES,
+  TCR_SEQ_COHORT_NODE,
+  TCR_SEQ_COHORT_MEMBER_EDGES,
+} from "./tcrSeqNodes";
 
 const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
 const normalizePairContext = (detail = {}) => {
@@ -146,6 +158,10 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Pipeline":"Not submitted in Data Track", "Path":"—", "Metadata":"—", "Contact":"—", "Email":"—", "Data Status":"Not Submitted" }},
   { id:"qc_oxygen_consumption", label:"Oxygen Consumption QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Pipeline":"Google Doc protocol includes pipeline", "Path":"drive.google.com/.../1RK45VTtT0A...", "Metadata":"QC + Raw metadata (Google Sheets)", "Contact":"Jeya", "Email":"jeyavandana@gmail.com", "Data Status":"Available" }},
+  { id:"qc_bcr_seq", label:"BCR-seq QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"FastQC + MiXCR pipeline", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Metadata":"Missing in Data Track", "Contact":"Adil Mohammed", "Email":"aim4007@med.cornell.edu; am2832@cornell.edu", "Data Status":"Partial — Metadata & Documents Missing" }},
+  { id:"qc_tcr_seq", label:"TCR-seq QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"FastQC + MiXCR pipeline", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Metadata":"Missing in Data Track", "Contact":"Adil Mohammed", "Email":"aim4007@med.cornell.edu; am2832@cornell.edu", "Data Status":"Partial — Metadata & Documents Missing" }},
 
   { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Metadata":"QC metadata + Raw metadata (Google Sheets links)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
@@ -165,6 +181,10 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Path":"—", "Metadata":"—", "Contact":"—", "Email":"—", "Data Status":"Not Submitted in Data Track" }},
   { id:"proc_oxygen_consumption_v1", label:"Oxygen Consumption Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"drive.google.com/.../1RK45VTtT0A...", "Metadata":"QC + Raw metadata (Google Sheets)", "Storage":"drive.google.com/.../1um8LIqqMVqN...", "Contact":"Jeya", "Email":"jeyavandana@gmail.com", "Data Status":"Available" }},
+  { id:"proc_bcr_seq_v1", label:"BCR-seq Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Pipeline":"FastQC + MiXCR", "Contact":"Adil Mohammed", "Email":"aim4007@med.cornell.edu; am2832@cornell.edu", "Data Status":"Partial — Metadata & Documents Missing" }},
+  { id:"proc_tcr_seq_v1", label:"TCR-seq Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Pipeline":"FastQC + MiXCR", "Contact":"Adil Mohammed", "Email":"aim4007@med.cornell.edu; am2832@cornell.edu", "Data Status":"Partial — Metadata & Documents Missing" }},
   { id:"dc_bulk_rna_v1", label:"Dataset Card\n(Bulk RNA v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/bulk_rna_v1.0.jsonld", "Author":"Dongliang Leng", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Known biases":"Exocrine-enriched samples in subset of donors", "Status":"Draft", "Updated":"2026-04-03" }},
   { id:"dc_bulk_atac_v1", label:"Dataset Card\n(Bulk ATAC v1.0)", type:"DatasetCard",
@@ -183,6 +203,10 @@ export const NODES = [
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/cytof_v1.0.jsonld", "Author":"TBD", "Institution":"TBD", "Consent":"Open (HPAP DUA)", "Data status":"Not Submitted (Data Track)", "Known biases":"Pipeline/metadata unavailable in current submission", "Status":"Draft", "Updated":"2026-04-06" }},
   { id:"dc_oxygen_consumption_v1", label:"Dataset Card\n(Oxygen Consumption v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/oxygen_consumption_v1.0.jsonld", "Author":"Jeya", "Institution":"University of Pennsylvania", "Consent":"Open (HPAP DUA)", "Primary docs":"docs.google.com/.../1oZfpNfuDidLho5k...", "Storage":"drive.google.com/.../1um8LIqqMVqN...", "Data status":"Available (Data Track)", "Status":"Draft", "Updated":"2026-04-06" }},
+  { id:"dc_bcr_seq_v1", label:"Dataset Card\n(BCR-seq v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/bcr_seq_v1.0.jsonld", "Author":"Adil Mohammed", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Pipeline":"FastQC + MiXCR", "Storage":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Data status":"Partial — Metadata & Documents Missing", "Status":"Draft", "Updated":"2026-04-06" }},
+  { id:"dc_tcr_seq_v1", label:"Dataset Card\n(TCR-seq v1.0)", type:"DatasetCard",
+    detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/tcr_seq_v1.0.jsonld", "Author":"Adil Mohammed", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Pipeline":"FastQC + MiXCR", "Storage":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.TCR_BCR.Adil", "Data status":"Partial — Metadata & Documents Missing", "Status":"Draft", "Updated":"2026-04-06" }},
 
 
   { id:"model_scfm",    label:"Single-cell FM v1\n(EpiAgent)", type:"Model",
@@ -224,6 +248,8 @@ export const NODES = [
   FLOW_CYTOMETRY_COHORT_NODE,
   CYTOF_COHORT_NODE,
   OXYGEN_CONSUMPTION_COHORT_NODE,
+  BCR_SEQ_COHORT_NODE,
+  TCR_SEQ_COHORT_NODE,
   ...HPAP_DONOR_NODES,
   ...FILTERED_BULK_RNA_NODES,
   ...FILTERED_BULK_ATAC_NODES,
@@ -234,6 +260,8 @@ export const NODES = [
   ...FLOW_CYTOMETRY_NODES,
   ...CYTOF_NODES,
   ...OXYGEN_CONSUMPTION_NODES,
+  ...BCR_SEQ_NODES,
+  ...TCR_SEQ_NODES,
 ];
 
 export const EDGES = [
@@ -246,6 +274,8 @@ export const EDGES = [
   { source:"cohort_flow_cytometry", target:"qc_flow_cytometry", label:"USED" },
   { source:"cohort_cytof", target:"qc_cytof", label:"USED" },
   { source:"cohort_oxygen_consumption", target:"qc_oxygen_consumption", label:"USED" },
+  { source:"cohort_bcr_seq", target:"qc_bcr_seq", label:"USED" },
+  { source:"cohort_tcr_seq", target:"qc_tcr_seq", label:"USED" },
   { source:"qc_bulk_rna", target:"proc_bulk_rna_v1", label:"GENERATED_BY" },
   { source:"qc_bulk_atac", target:"proc_bulk_atac_v1", label:"GENERATED_BY" },
   { source:"qc_scrna", target:"proc_scrna_v1", label:"GENERATED_BY" },
@@ -255,6 +285,8 @@ export const EDGES = [
   { source:"qc_flow_cytometry", target:"proc_flow_cytometry_v1", label:"GENERATED_BY" },
   { source:"qc_cytof", target:"proc_cytof_v1", label:"GENERATED_BY" },
   { source:"qc_oxygen_consumption", target:"proc_oxygen_consumption_v1", label:"GENERATED_BY" },
+  { source:"qc_bcr_seq", target:"proc_bcr_seq_v1", label:"GENERATED_BY" },
+  { source:"qc_tcr_seq", target:"proc_tcr_seq_v1", label:"GENERATED_BY" },
   { source:"proc_bulk_rna_v1", target:"dc_bulk_rna_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_atac_v1", target:"dc_bulk_atac_v1", label:"DOCUMENTED_BY" },
   { source:"proc_scrna_v1", target:"dc_scrna_v1", label:"DOCUMENTED_BY" },
@@ -264,6 +296,8 @@ export const EDGES = [
   { source:"proc_flow_cytometry_v1", target:"dc_flow_cytometry_v1", label:"DOCUMENTED_BY" },
   { source:"proc_cytof_v1", target:"dc_cytof_v1", label:"DOCUMENTED_BY" },
   { source:"proc_oxygen_consumption_v1", target:"dc_oxygen_consumption_v1", label:"DOCUMENTED_BY" },
+  { source:"proc_bcr_seq_v1", target:"dc_bcr_seq_v1", label:"DOCUMENTED_BY" },
+  { source:"proc_tcr_seq_v1", target:"dc_tcr_seq_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_rna_v1", target:"model_genomic", label:"TRAINED_ON",
     train:{ "Model version":"Genomic FM v1.0", "Architecture":"EPCOT multi-modal transformer", "Modality":"Bulk RNA-seq", "Data path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
   { source:"proc_bulk_atac_v1", target:"model_genomic", label:"TRAINED_ON",
@@ -341,6 +375,8 @@ export const EDGES = [
   ...FLOW_CYTOMETRY_HAD_MEMBER_EDGES,
   ...CYTOF_HAD_MEMBER_EDGES,
   ...OXYGEN_CONSUMPTION_HAD_MEMBER_EDGES,
+  ...BCR_SEQ_HAD_MEMBER_EDGES,
+  ...TCR_SEQ_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
   ...FILTERED_SCRNA_COHORT_MEMBER_EDGES,
@@ -350,6 +386,8 @@ export const EDGES = [
   ...FLOW_CYTOMETRY_COHORT_MEMBER_EDGES,
   ...CYTOF_COHORT_MEMBER_EDGES,
   ...OXYGEN_CONSUMPTION_COHORT_MEMBER_EDGES,
+  ...BCR_SEQ_COHORT_MEMBER_EDGES,
+  ...TCR_SEQ_COHORT_MEMBER_EDGES,
 ];
 
 
