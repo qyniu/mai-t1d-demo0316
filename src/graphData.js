@@ -35,6 +35,24 @@ import {
   CITE_SEQ_PROTEIN_COHORT_NODE,
   CITE_SEQ_PROTEIN_COHORT_MEMBER_EDGES,
 } from "./citeSeqProteinNodes";
+import {
+  FLOW_CYTOMETRY_NODES,
+  FLOW_CYTOMETRY_HAD_MEMBER_EDGES,
+  FLOW_CYTOMETRY_COHORT_NODE,
+  FLOW_CYTOMETRY_COHORT_MEMBER_EDGES,
+} from "./flowCytometryNodes";
+import {
+  CYTOF_NODES,
+  CYTOF_HAD_MEMBER_EDGES,
+  CYTOF_COHORT_NODE,
+  CYTOF_COHORT_MEMBER_EDGES,
+} from "./cytofNodes";
+import {
+  OXYGEN_CONSUMPTION_NODES,
+  OXYGEN_CONSUMPTION_HAD_MEMBER_EDGES,
+  OXYGEN_CONSUMPTION_COHORT_NODE,
+  OXYGEN_CONSUMPTION_COHORT_MEMBER_EDGES,
+} from "./oxygenConsumptionNodes";
 
 const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
 const normalizePairContext = (detail = {}) => {
@@ -122,6 +140,12 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Pipeline":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/snMultiome(ATAC+RNA)/Annotation/snmultiome pipeline.docx", "Path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Contact":"Haoxuan Zeng", "Email":"N/A", "Data Status":"Partial — Pipeline & Metadata Missing" }},
   { id:"qc_cite_seq", label:"CITE-seq QC\nPipeline v1.0", type:"Pipeline",
     detail:{ "Version":"v1.0", "Pipeline":"Not submitted in Data Track", "Path":"—", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/CITEseq/adt_marker_list.csv", "Contact":"—", "Email":"—", "Data Status":"Not Submitted" }},
+  { id:"qc_flow_cytometry", label:"Flow Cytometry QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"Drive folder (pipeline docs)", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.Flow_cytometery.T1D/05.FlowCytometry.0113/hpapdata", "Metadata":"QC metadata (Google Sheets)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu", "Data Status":"Partial — Documents Missing" }},
+  { id:"qc_cytof", label:"CyTOF QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"Not submitted in Data Track", "Path":"—", "Metadata":"—", "Contact":"—", "Email":"—", "Data Status":"Not Submitted" }},
+  { id:"qc_oxygen_consumption", label:"Oxygen Consumption QC\nPipeline v1.0", type:"Pipeline",
+    detail:{ "Version":"v1.0", "Pipeline":"Google Doc protocol includes pipeline", "Path":"drive.google.com/.../1RK45VTtT0A...", "Metadata":"QC + Raw metadata (Google Sheets)", "Contact":"Jeya", "Email":"jeyavandana@gmail.com", "Data Status":"Available" }},
 
   { id:"proc_bulk_rna_v1", label:"Bulk RNA-seq Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/01.Bulk_RNA.seq.for_T1D_immno_model/", "Metadata":"QC metadata + Raw metadata (Google Sheets links)", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu" }},
@@ -135,6 +159,12 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/proj/MAI_T1D_Data/snMultiome/", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/snMultiome(ATAC+RNA)/Annotation/celltype_summary.csv", "Contact":"Haoxuan Zeng", "Email":"N/A" }},
   { id:"proc_cite_seq_v1", label:"CITE-seq Protein Dataset\nv1.0", type:"ProcessedData",
     detail:{ "Version":"v1.0", "Path":"—", "Metadata":"/nfs/turbo/umms-drjieliu/proj/MAI_T1Ddata/CITEseq/adt_marker_list.csv", "Contact":"—", "Email":"—", "Data Status":"Not Submitted in Data Track" }},
+  { id:"proc_flow_cytometry_v1", label:"Flow Cytometry Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"/nfs/turbo/umms-drjieliu/usr/dongleng/02.Flow_cytometery.T1D/05.FlowCytometry.0113/hpapdata", "Storage":"https://docs.google.com/spreadsheets/d/124D9N5GJQdkOBiyLlvYq6uZ4vJHmhKqL7bUColcgPf0/edit?usp=sharing", "Contact":"Dongliang Leng", "Email":"dol4005@med.cornell.edu", "Data Status":"Partial — Documents Missing" }},
+  { id:"proc_cytof_v1", label:"CyTOF Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"—", "Metadata":"—", "Contact":"—", "Email":"—", "Data Status":"Not Submitted in Data Track" }},
+  { id:"proc_oxygen_consumption_v1", label:"Oxygen Consumption Dataset\nv1.0", type:"ProcessedData",
+    detail:{ "Version":"v1.0", "Path":"drive.google.com/.../1RK45VTtT0A...", "Metadata":"QC + Raw metadata (Google Sheets)", "Storage":"drive.google.com/.../1um8LIqqMVqN...", "Contact":"Jeya", "Email":"jeyavandana@gmail.com", "Data Status":"Available" }},
   { id:"dc_bulk_rna_v1", label:"Dataset Card\n(Bulk RNA v1.0)", type:"DatasetCard",
     detail:{ "Standard":"Datasheets for Datasets (CACM 2021)", "Format":"JSON-LD", "GitHub":"github.com/mai-t1d/governance/dataset-cards/bulk_rna_v1.0.jsonld", "Author":"Dongliang Leng", "Institution":"Cornell University", "Consent":"Open (HPAP DUA)", "Known biases":"Exocrine-enriched samples in subset of donors", "Status":"Draft", "Updated":"2026-04-03" }},
   { id:"dc_bulk_atac_v1", label:"Dataset Card\n(Bulk ATAC v1.0)", type:"DatasetCard",
@@ -169,6 +199,9 @@ export const NODES = [
   SCATAC_COHORT_NODE,
   SNMULTIOMICS_COHORT_NODE,
   CITE_SEQ_PROTEIN_COHORT_NODE,
+  FLOW_CYTOMETRY_COHORT_NODE,
+  CYTOF_COHORT_NODE,
+  OXYGEN_CONSUMPTION_COHORT_NODE,
   ...HPAP_DONOR_NODES,
   ...FILTERED_BULK_RNA_NODES,
   ...FILTERED_BULK_ATAC_NODES,
@@ -176,6 +209,9 @@ export const NODES = [
   ...FILTERED_SCATAC_NODES,
   ...SNMULTIOMICS_NODES,
   ...CITE_SEQ_PROTEIN_NODES,
+  ...FLOW_CYTOMETRY_NODES,
+  ...CYTOF_NODES,
+  ...OXYGEN_CONSUMPTION_NODES,
 ];
 
 export const EDGES = [
@@ -185,12 +221,18 @@ export const EDGES = [
   { source:"cohort_scatac_seq", target:"qc_scatac", label:"USED" },
   { source:"cohort_snmultiomics", target:"qc_snmultiomics", label:"USED" },
   { source:"cohort_cite_seq_protein", target:"qc_cite_seq", label:"USED" },
+  { source:"cohort_flow_cytometry", target:"qc_flow_cytometry", label:"USED" },
+  { source:"cohort_cytof", target:"qc_cytof", label:"USED" },
+  { source:"cohort_oxygen_consumption", target:"qc_oxygen_consumption", label:"USED" },
   { source:"qc_bulk_rna", target:"proc_bulk_rna_v1", label:"GENERATED_BY" },
   { source:"qc_bulk_atac", target:"proc_bulk_atac_v1", label:"GENERATED_BY" },
   { source:"qc_scrna", target:"proc_scrna_v1", label:"GENERATED_BY" },
   { source:"qc_scatac", target:"proc_scatac_v1", label:"GENERATED_BY" },
   { source:"qc_snmultiomics", target:"proc_snmultiomics_v1", label:"GENERATED_BY" },
   { source:"qc_cite_seq", target:"proc_cite_seq_v1", label:"GENERATED_BY" },
+  { source:"qc_flow_cytometry", target:"proc_flow_cytometry_v1", label:"GENERATED_BY" },
+  { source:"qc_cytof", target:"proc_cytof_v1", label:"GENERATED_BY" },
+  { source:"qc_oxygen_consumption", target:"proc_oxygen_consumption_v1", label:"GENERATED_BY" },
   { source:"proc_bulk_rna_v1", target:"dc_bulk_rna_v1", label:"DOCUMENTED_BY" },
   { source:"proc_bulk_atac_v1", target:"dc_bulk_atac_v1", label:"DOCUMENTED_BY" },
   { source:"proc_scrna_v1", target:"dc_scrna_v1", label:"DOCUMENTED_BY" },
@@ -241,12 +283,18 @@ export const EDGES = [
   ...FILTERED_SCATAC_HAD_MEMBER_EDGES,
   ...SNMULTIOMICS_HAD_MEMBER_EDGES,
   ...CITE_SEQ_PROTEIN_HAD_MEMBER_EDGES,
+  ...FLOW_CYTOMETRY_HAD_MEMBER_EDGES,
+  ...CYTOF_HAD_MEMBER_EDGES,
+  ...OXYGEN_CONSUMPTION_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
   ...FILTERED_SCRNA_COHORT_MEMBER_EDGES,
   ...FILTERED_SCATAC_COHORT_MEMBER_EDGES,
   ...SNMULTIOMICS_COHORT_MEMBER_EDGES,
   ...CITE_SEQ_PROTEIN_COHORT_MEMBER_EDGES,
+  ...FLOW_CYTOMETRY_COHORT_MEMBER_EDGES,
+  ...CYTOF_COHORT_MEMBER_EDGES,
+  ...OXYGEN_CONSUMPTION_COHORT_MEMBER_EDGES,
 ];
 
 
