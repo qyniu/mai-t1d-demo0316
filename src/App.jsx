@@ -742,7 +742,10 @@ function GraphView({ graphMode, highlightLinked }) {
     const svg=d3.select(svgRef.current); svg.selectAll("*").remove();
 
     const nodes=NODES.filter(n=>visIds.has(n.id)).map(n=>({...n}));
-    const edges=EDGES.filter(e=>visIds.has(edgeSrcId(e))&&visIds.has(edgeTgtId(e))).map(e=>({...e}));
+    const edges=EDGES
+      .filter(e=>visIds.has(edgeSrcId(e))&&visIds.has(edgeTgtId(e)))
+      .filter(e => !(graphMode==="full" && e.hiddenInFullGraph))
+      .map(e=>({...e}));
     setVisibleNodeCount(nodes.length);
 
     const defs=svg.append("defs");
@@ -867,7 +870,7 @@ function GraphView({ graphMode, highlightLinked }) {
     });
   },[selected, selEdge, highlightLinked]);
 
-  const connEdges=selected?EDGES.filter(e=>e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)):[];
+  const connEdges=selected?EDGES.filter(e=>(e.source===selected.id||e.target===selected.id||(typeof e.source==="object"&&e.source.id===selected.id)||(typeof e.target==="object"&&e.target.id===selected.id)) && !(graphMode==="full" && e.hiddenInFullGraph)):[];
   const srcNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.source==="object"?selEdge.source.id:selEdge.source)) : null;
   const tgtNode = selEdge ? NODES.find(n=>n.id===(typeof selEdge.target==="object"?selEdge.target.id:selEdge.target)) : null;
 

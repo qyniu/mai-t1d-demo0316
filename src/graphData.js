@@ -83,6 +83,7 @@ import {
   IMC_COHORT_NODE,
   IMC_COHORT_MEMBER_EDGES,
 } from "./imcNodes";
+import { buildTrainEvalAssignments } from "./trainEvalSplit";
 
 const normalizeText = (v) => String(v ?? "").trim().toLowerCase();
 const normalizePairContext = (detail = {}) => {
@@ -499,10 +500,12 @@ const TRAIN_SPLIT_RATIO = "80%";
 const EVAL_SPLIT_RATIO = "20%";
 
 const nodeById = new Map(BASE_NODES.map((n) => [n.id, n]));
+const datasetSplitAssignments = buildTrainEvalAssignments({ nodes: BASE_NODES, edges: BASE_EDGES });
 const splitNodes = [];
 const splitEdges = [];
 const splitNodeIds = new Set();
 const splitDeriveKeys = new Set();
+const splitMemberEdgeKeys = new Set();
 
 const makeSplitNode = (datasetId, splitType) => {
   const id = `${datasetId}__${splitType}`;
@@ -510,6 +513,12 @@ const makeSplitNode = (datasetId, splitType) => {
   splitNodeIds.add(id);
   const base = nodeById.get(datasetId);
   const ratio = splitType === TRAIN_SPLIT_LABEL ? TRAIN_SPLIT_RATIO : EVAL_SPLIT_RATIO;
+  const assignment = datasetSplitAssignments[datasetId];
+  const memberCount =
+    splitType === TRAIN_SPLIT_LABEL
+      ? assignment?.trainingIds?.length ?? 0
+      : assignment?.evaluationIds?.length ?? 0;
+  const totalCount = assignment?.sampleIds?.length ?? 0;
   splitNodes.push({
     id,
     label: `${base?.label ?? datasetId}\\n(${splitType})`,
@@ -519,9 +528,31 @@ const makeSplitNode = (datasetId, splitType) => {
       "Parent dataset": datasetId,
       "Split": splitType,
       "Split ratio": ratio,
+      "Split method": "Sort by donor ID within modality, then 80/20",
+      "Sample count in split": memberCount,
+      "Total modality sample count": totalCount,
     },
   });
   return id;
+};
+
+const addSplitMembershipEdges = (datasetId, splitNodeId, splitType) => {
+  const assignment = datasetSplitAssignments[datasetId];
+  if (!assignment) return;
+  const sampleIds =
+    splitType === TRAIN_SPLIT_LABEL ? assignment.trainingIds ?? [] : assignment.evaluationIds ?? [];
+  for (const sampleId of sampleIds) {
+    const key = `${splitNodeId}->${sampleId}`;
+    if (splitMemberEdgeKeys.has(key)) continue;
+    splitMemberEdgeKeys.add(key);
+    splitEdges.push({
+      source: splitNodeId,
+      target: sampleId,
+      label: "HAD_MEMBER",
+      hiddenInFullGraph: true,
+      split: { Type: splitType, Ratio: splitType === TRAIN_SPLIT_LABEL ? TRAIN_SPLIT_RATIO : EVAL_SPLIT_RATIO },
+    });
+  }
 };
 
 for (const e of BASE_EDGES) {
@@ -530,6 +561,8 @@ for (const e of BASE_EDGES) {
   const modelId = typeof e.target === "object" ? e.target.id : e.target;
   const trainId = makeSplitNode(datasetId, TRAIN_SPLIT_LABEL);
   const evalId = makeSplitNode(datasetId, EVAL_SPLIT_LABEL);
+  addSplitMembershipEdges(datasetId, trainId, TRAIN_SPLIT_LABEL);
+  addSplitMembershipEdges(datasetId, evalId, EVAL_SPLIT_LABEL);
 
   const trainDeriveKey = `${datasetId}->${trainId}`;
   if (!splitDeriveKeys.has(trainDeriveKey)) {
