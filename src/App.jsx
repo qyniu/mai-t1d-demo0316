@@ -1068,20 +1068,21 @@ function queryGraph(intent, params) {
 //  AGENT VIEW 
 const GRAPH_CONTEXT = `
 You are a governance agent for the MAI-T1D (Multimodal AI for Type 1 Diabetes) project knowledge graph.
-The graph tracks W3C PROV provenance from raw biobank data to foundation models.
-
-NODE TYPES: RawData, Pipeline, ProcessedData, DatasetCard, Model, ModelCard, DownstreamTask
-
-NODES (id ?label):
-${NODES.map(n=>`  ${n.id}: ${labelSingleLine(n.label)} [${n.type}]`).join("\n")}
-
-EDGES (source ?target [label]):
-${EDGES.map(e=>`  ${e.source} ?${e.target} [${e.label}]${e.train?` {date:${e.train["Training date"]},executor:${e.train["Executor"]}}`:""}`).join("\n")}
-
-You have access to a queryGraph tool that executes structured queries against the graph.
-Always call the tool first, then answer based on the results.
-Be concise and precise ?you are serving AI agents and researchers, not general users.
-Note: In a production system, graph data would be retrieved via indexed queries rather than embedded in the prompt. This demo embeds the full graph for simplicity.
+Do not rely on embedded full-graph text. Always use the queryGraph tool to retrieve data.
+Available intents:
+- datasets_for_model
+- models_for_dataset
+- compliance_status
+- pipeline_for_dataset
+- downstream_tasks
+- provenance_chain
+- card_links
+- node_detail
+Workflow:
+1) Pick the best intent and params.
+2) Call queryGraph.
+3) Answer only from tool results.
+Keep answers concise and precise for AI researchers.
 `;
 
 const AGENT_TOOLS = [
