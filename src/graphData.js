@@ -189,7 +189,7 @@ export const NODES = [
     detail:{ "Version":"v1.0", "Architecture":"scGPT 70M params", "Cell-type F1 (macro)":"0.93", "Beta-cell F1":"0.95", "Alpha-cell F1":"0.92", "Eval set":"scRNA v2.1 (20% holdout)", "Lighthouse":"/lighthouse/mai-t1d/models/scfm_v1.0/", "Status":"Active", "Compliance hold":"false" }},
   { id:"model_genomic", label:"Genomic FM v1\n(EPCOT-v2)",     type:"Model",
     detail:{ "Version":"v1.0", "Architecture":"EPCOT multi-modal transformer", "AUROC (epigenome)":"0.91", "Pearson r (expression)":"0.87", "Eval set":"Multi-modal held-out", "Lighthouse":"/lighthouse/mai-t1d/models/genomic_v1.0/", "Status":"Active", "Compliance hold":"false" }},
-  { id:"model_protein", label:"Protein FM v1\n(Proto-Encoder)", type:"Model",
+  { id:"model_protein", label:"Protein FM v1", type:"Model",
     detail:{ "Version":"v1.0", "Architecture":"Protein multi-modal transformer", "AUPRC":"0.88", "Eval set":"Holdout proteomics cohort", "Lighthouse":"/lighthouse/mai-t1d/models/protein_v1.0/", "Status":"Active", "Compliance hold":"false" }},
 
   { id:"mc_scfm",    label:"Model Card\n(scFM v1)",          type:"ModelCard",
