@@ -1028,11 +1028,51 @@ function queryGraph(intent, params) {
     case "models_for_dataset": {
       const datasetNode =
         resolveNode(params.datasetId, ["ProcessedData"]) ||
+        resolveNode(params.datasetType, ["ProcessedData"]) ||
         resolveNode(params.query, ["ProcessedData"]);
-      const datasetId = datasetNode?.id || params.datasetId;
-      const trainEdges = EDGES.filter(e => e.label==="TRAINED_ON" && edgeSrcId(e)===datasetId);
-      const models = trainEdges.map(e => NODES.find(n=>n.id===edgeTgtId(e))).filter(Boolean);
-      return { rows: models.map(m=>({ id:m.id, label:labelSingleLine(m.label), type:m.type, detail:m.detail })) };
+      const datasetId = datasetNode?.id || params.datasetId || params.datasetType;
+      if (!datasetId) return { rows: [] };
+
+      const sourceIds = new Set([datasetId]);
+      // Include split children (e.g. proc_xxx__training / proc_xxx__evaluation).
+      EDGES
+        .filter(e => e.label==="DERIVED_FROM" && edgeSrcId(e)===datasetId)
+        .forEach(e => sourceIds.add(edgeTgtId(e)));
+
+      const useEdges = EDGES.filter(
+        e =>
+          sourceIds.has(edgeSrcId(e)) &&
+          (e.label==="TRAINED_ON" || e.label==="EVALUATED_ON")
+      );
+
+      const modelRows = new Map();
+      for (const e of useEdges) {
+        const model = NODES.find(n=>n.id===edgeTgtId(e));
+        if (!model) continue;
+        const key = model.id;
+        const existing = modelRows.get(key) || {
+          id: model.id,
+          label: labelSingleLine(model.label),
+          type: model.type,
+          detail: model.detail,
+          usage: new Set(),
+          via: new Set(),
+        };
+        existing.usage.add(e.label);
+        existing.via.add(edgeSrcId(e));
+        modelRows.set(key, existing);
+      }
+
+      return {
+        rows: [...modelRows.values()].map(r => ({
+          id: r.id,
+          label: r.label,
+          type: r.type,
+          detail: r.detail,
+          usage: [...r.usage],
+          via: [...r.via],
+        })),
+      };
     }
     case "compliance_status": {
       const models = NODES.filter(n=>n.type==="Model");
