@@ -1082,7 +1082,11 @@ Workflow:
 1) Pick the best intent and params.
 2) Call queryGraph.
 3) Answer only from tool results.
-Keep answers concise and precise for AI researchers.
+Answer style requirements:
+- Return a direct final answer, not your search process.
+- Never write phrases like "let me try/search/look up".
+- If query results are empty, clearly say no matching records were found in the current graph.
+- Keep answers concise and precise for AI researchers.
 `;
 
 const AGENT_TOOLS = [
@@ -1191,6 +1195,7 @@ function AgentView() {
       setPhase("answering");
       addTrace({ kind:"step", icon:"✍️", label:"Step 3 - generating answer", detail:"Claude interpreting query results..." });
 
+      const assistantToolOnly = toolUses.map(tu => ({ type:"tool_use", id:tu.id, name:tu.name, input:tu.input }));
       const res2 = await fetch("/api/anthropic/messages", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
@@ -1199,8 +1204,9 @@ function AgentView() {
           system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
           messages:[
             ...history.map(m=>({role:m.role,content:m.content})),
-            { role:"assistant", content:data1.content },
+            { role:"assistant", content:assistantToolOnly },
             { role:"user",      content:toolResults },
+            { role:"user",      content:"Provide the final user-facing answer only. Do not describe your search steps. If no rows were returned, explicitly say no matching records were found in the current graph." },
           ],
         })
       });
