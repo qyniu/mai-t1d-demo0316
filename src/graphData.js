@@ -61,6 +61,41 @@ const FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES = BULK_ATAC_COHORT_MEMBER_EDGES.fil
   filteredBulkAtacIds.has(e.target)
 );
 
+const donorTissueKeyForNode = (node) => {
+  const donor = normalizeText(node?.detail?.Donor);
+  const tissue = normalizeText(node?.detail?.Tissue);
+  return donor && tissue ? `${donor}||${tissue}` : "";
+};
+
+const scrnaDonorTissueKeys = new Set(SCRNA_NODES.map(donorTissueKeyForNode).filter(Boolean));
+const scatacDonorTissueKeys = new Set(SCATAC_NODES.map(donorTissueKeyForNode).filter(Boolean));
+const matchedScDonorTissueKeys = new Set(
+  [...scrnaDonorTissueKeys].filter((k) => scatacDonorTissueKeys.has(k))
+);
+
+const FILTERED_SCRNA_NODES = SCRNA_NODES.filter((n) =>
+  matchedScDonorTissueKeys.has(donorTissueKeyForNode(n))
+);
+const FILTERED_SCATAC_NODES = SCATAC_NODES.filter((n) =>
+  matchedScDonorTissueKeys.has(donorTissueKeyForNode(n))
+);
+
+const filteredScrnaIds = new Set(FILTERED_SCRNA_NODES.map((n) => n.id));
+const filteredScatacIds = new Set(FILTERED_SCATAC_NODES.map((n) => n.id));
+
+const FILTERED_SCRNA_HAD_MEMBER_EDGES = SCRNA_HAD_MEMBER_EDGES.filter((e) =>
+  filteredScrnaIds.has(e.target)
+);
+const FILTERED_SCATAC_HAD_MEMBER_EDGES = SCATAC_HAD_MEMBER_EDGES.filter((e) =>
+  filteredScatacIds.has(e.target)
+);
+const FILTERED_SCRNA_COHORT_MEMBER_EDGES = SCRNA_COHORT_MEMBER_EDGES.filter((e) =>
+  filteredScrnaIds.has(e.target)
+);
+const FILTERED_SCATAC_COHORT_MEMBER_EDGES = SCATAC_COHORT_MEMBER_EDGES.filter((e) =>
+  filteredScatacIds.has(e.target)
+);
+
 export const NODES = [
 
   { id:"qc_bulk_rna", label:"Bulk RNA QC\nPipeline v1.0", type:"Pipeline",
@@ -115,8 +150,8 @@ export const NODES = [
   ...HPAP_DONOR_NODES,
   ...FILTERED_BULK_RNA_NODES,
   ...FILTERED_BULK_ATAC_NODES,
-  ...SCRNA_NODES,
-  ...SCATAC_NODES,
+  ...FILTERED_SCRNA_NODES,
+  ...FILTERED_SCATAC_NODES,
 ];
 
 export const EDGES = [
@@ -152,12 +187,12 @@ export const EDGES = [
   { source:"model_genomic", target:"task_epigenome", label:"ENABLES" },
   ...FILTERED_BULK_RNA_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_HAD_MEMBER_EDGES,
-  ...SCRNA_HAD_MEMBER_EDGES,
-  ...SCATAC_HAD_MEMBER_EDGES,
+  ...FILTERED_SCRNA_HAD_MEMBER_EDGES,
+  ...FILTERED_SCATAC_HAD_MEMBER_EDGES,
   ...FILTERED_BULK_RNA_COHORT_MEMBER_EDGES,
   ...FILTERED_BULK_ATAC_COHORT_MEMBER_EDGES,
-  ...SCRNA_COHORT_MEMBER_EDGES,
-  ...SCATAC_COHORT_MEMBER_EDGES,
+  ...FILTERED_SCRNA_COHORT_MEMBER_EDGES,
+  ...FILTERED_SCATAC_COHORT_MEMBER_EDGES,
 ];
 
 
