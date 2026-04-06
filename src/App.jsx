@@ -29,10 +29,10 @@ const EDGE_STYLE = {
 
 const EDGE_LEGEND = [
   { key:"USED",             label:"USED" },
-  { key:"WAS_GENERATED_BY", label:"WAS_GENERATED_BY" },
-  { key:"TRAINED_ON",       label:"TRAINED_ON (with training metadata)" },
+  { key:"WAS_GENERATED_BY", label:"GENERATED_BY" },
+  { key:"TRAINED_ON",       label:"TRAINED_ON" },
   { key:"DOCUMENTED_BY",    label:"DOCUMENTED_BY" },
-  { key:"LINKED_TO",        label:"LINKED_TO ?core contribution" },
+  { key:"LINKED_TO",        label:"LINKED_TO" },
   { key:"ENABLES",          label:"ENABLES" },
   { key:"DERIVED_FROM",     label:"DERIVED_FROM" },
   { key:"EMBEDDED_BY",      label:"EMBEDDED_BY" },
