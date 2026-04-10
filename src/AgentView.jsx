@@ -143,6 +143,27 @@ function queryGraph(intent, params) {
     return donorIds;
   };
   const ratio = (numerator, denominator) => (denominator ? numerator / denominator : 0);
+  const parseDate = (raw) => {
+    const s = String(raw || "").trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const modalityToDatasetIds = {
+    "scrna": ["proc_scrna_v1"],
+    "scrna-seq": ["proc_scrna_v1"],
+    "sc rna": ["proc_scrna_v1"],
+    "single-cell rna": ["proc_scrna_v1"],
+    "wgs": [],
+  };
+  const resolveModalityDatasetIds = (raw) => {
+    const q = String(raw || "").toLowerCase();
+    for (const key of Object.keys(modalityToDatasetIds)) {
+      if (q.includes(key)) return modalityToDatasetIds[key];
+    }
+    return [];
+  };
 
   switch (intent) {
     case "datasets_for_model": {
@@ -396,6 +417,181 @@ function queryGraph(intent, params) {
           controlRatio: ratio(counts.Control, donors.length),
         },
       };
+    }
+    case "donor_modality_availability": {
+      const donorCode = normalizeDonorCode(params.donorCode || params.donorId || params.query || "") || "";
+      const modality = String(params.modality || params.datasetType || "WGS");
+      const donorNode = donorCodeToNode.get(donorCode);
+      if (!donorNode) return { rows: [], summary: { found: false, donorCode, modality } };
+      const modalityValue = String(donorNode?.detail?.[modality] ?? donorNode?.detail?.[String(modality).toUpperCase()] ?? "").trim();
+      const available = ["1", "true", "yes", "y"].includes(modalityValue.toLowerCase());
+      return {
+        rows: [{
+          donorCode,
+          modality,
+          available,
+          rawValue: modalityValue || "(missing)",
+        }],
+        summary: { found: true, donorCode, modality, available },
+      };
+    }
+    case "qc_pipeline_for_model_modality": {
+      const modelNode =
+        resolveNode(params.modelId, ["Model", "FineTunedModel"]) ||
+        resolveNode(params.query, ["Model", "FineTunedModel"]);
+      const modelId = modelNode?.id || params.modelId || "model_scfm";
+      const modalityDatasetIds = resolveModalityDatasetIds(params.modality || params.datasetType || params.query);
+      const trainSourceIds = EDGES
+        .filter((e) => e.label === "TRAINED_ON" && edgeTgtId(e) === modelId)
+        .map((e) => parentDatasetOfSplit(edgeSrcId(e)));
+      const candidateDatasetIds = modalityDatasetIds.length
+        ? trainSourceIds.filter((id) => modalityDatasetIds.includes(id))
+        : trainSourceIds;
+      const uniqDatasetIds = [...new Set(candidateDatasetIds.length ? candidateDatasetIds : modalityDatasetIds)];
+      const trainingLinked = candidateDatasetIds.length > 0;
+      const rows = uniqDatasetIds.map((datasetId) => {
+        const datasetNode = NODES.find((n) => n.id === datasetId);
+        const genEdge = EDGES.find((e) => (e.label === "GENERATED_BY" || e.label === "WAS_GENERATED_BY") && edgeTgtId(e) === datasetId);
+        const pipelineNode = genEdge ? NODES.find((n) => n.id === edgeSrcId(genEdge)) : null;
+        return {
+          datasetId,
+          datasetLabel: labelSingleLine(datasetNode?.label || datasetId),
+          pipelineId: pipelineNode?.id || null,
+          pipelineLabel: labelSingleLine(pipelineNode?.label || ""),
+          pipelineDetail: pipelineNode?.detail || {},
+        };
+      });
+      return {
+        rows,
+        summary: {
+          modelId,
+          modelLabel: labelSingleLine(modelNode?.label || modelId),
+          rowCount: rows.length,
+          trainingLinked,
+        },
+      };
+    }
+    case "governance_events_by_period": {
+      const period = String(params.period || params.query || "").toUpperCase();
+      const qMatch = period.match(/(\d{4})[-\s]?Q([1-4])/);
+      if (!qMatch) return { rows: [], summary: { period, parsed: false } };
+      const year = Number(qMatch[1]);
+      const quarter = Number(qMatch[2]);
+      const monthMin = (quarter - 1) * 3 + 1;
+      const monthMax = monthMin + 2;
+      const eventRows = NODES
+        .filter((n) => n.type === "DatasetCard" || n.type === "ModelCard")
+        .map((n) => ({
+          id: n.id,
+          label: labelSingleLine(n.label),
+          type: n.type,
+          updated: String(n.detail?.Updated || ""),
+          status: String(n.detail?.Status || ""),
+        }))
+        .filter((r) => {
+          const d = parseDate(r.updated);
+          if (!d) return false;
+          const y = d.getUTCFullYear();
+          const m = d.getUTCMonth() + 1;
+          return y === year && m >= monthMin && m <= monthMax;
+        });
+      return {
+        rows: eventRows,
+        summary: { period: `${year}-Q${quarter}`, count: eventRows.length },
+      };
+    }
+    case "models_need_reeval_after_donor_qc": {
+      const donorCode = normalizeDonorCode(params.donorCode || params.donorId || params.query || "") || "";
+      const donorNode = donorCodeToNode.get(donorCode);
+      if (!donorNode) return { rows: [], summary: { found: false, donorCode } };
+      const donorId = donorNode.id;
+      const sampleIds = EDGES.filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === donorId).map((e) => edgeTgtId(e));
+      const splitDatasetIds = new Set();
+      sampleIds.forEach((sid) => {
+        EDGES.filter((e) => e.label === "HAD_MEMBER" && edgeTgtId(e) === sid).forEach((e) => splitDatasetIds.add(edgeSrcId(e)));
+      });
+      const impactedBaseModels = new Set();
+      splitDatasetIds.forEach((dsId) => {
+        EDGES
+          .filter((e) => (e.label === "TRAINED_ON" || e.label === "EVALUATED_ON") && edgeSrcId(e) === dsId)
+          .forEach((e) => impactedBaseModels.add(edgeTgtId(e)));
+      });
+      const impactedAllModels = new Set([...impactedBaseModels]);
+      [...impactedBaseModels].forEach((mid) => {
+        EDGES.filter((e) => e.label === "FINETUNED_ON" && edgeTgtId(e) === mid).forEach((e) => impactedAllModels.add(edgeSrcId(e)));
+        EDGES.filter((e) => e.label === "EMBEDDED_BY" && edgeTgtId(e) === mid).forEach((e) => {
+          const embId = edgeSrcId(e);
+          EDGES.filter((x) => x.label === "FINETUNED_ON" && edgeTgtId(x) === embId).forEach((x) => impactedAllModels.add(edgeSrcId(x)));
+        });
+      });
+      const rows = [...impactedAllModels]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label), type: n.type, reason: "Donor samples appear in training/evaluation lineage" }));
+      return {
+        rows,
+        summary: { found: true, donorCode, impactedModelCount: rows.length },
+      };
+    }
+    case "qc_pipeline_owner": {
+      const q = String(params.query || params.pipeline || "").toLowerCase();
+      const versionMatch = q.match(/v\s*([0-9]+(?:\.[0-9]+)*)/i);
+      const requestedVersion = versionMatch ? `v${versionMatch[1]}` : null;
+      const isScrna = q.includes("scrna") || q.includes("sc rna");
+      const pipelines = NODES.filter((n) => n.type === "Pipeline");
+      const matches = pipelines.filter((p) => {
+        const lbl = labelSingleLine(p.label).toLowerCase();
+        if (isScrna && !lbl.includes("scrna")) return false;
+        if (requestedVersion && String(p.detail?.Version || "").toLowerCase() !== requestedVersion.toLowerCase()) return false;
+        return isScrna || q.includes(lbl);
+      });
+      const best = matches.length ? matches : (isScrna ? pipelines.filter((p) => labelSingleLine(p.label).toLowerCase().includes("scrna")) : []);
+      const rows = best.map((p) => ({
+        id: p.id,
+        pipelineLabel: labelSingleLine(p.label),
+        version: p.detail?.Version || "unknown",
+        contact: p.detail?.Contact || "unknown",
+        email: p.detail?.Email || "unknown",
+      }));
+      return { rows, summary: { requestedVersion, exactVersionFound: matches.length > 0 } };
+    }
+    case "institution_datasets_used_after_year": {
+      const institution = String(params.institution || params.query || "").toLowerCase();
+      const year = Number(params.year || (String(params.query || "").match(/20\d{2}/)?.[0]) || 2024);
+      const usedDatasetIds = new Set(
+        EDGES
+          .filter((e) => e.label === "TRAINED_ON" || e.label === "EVALUATED_ON")
+          .map((e) => parentDatasetOfSplit(edgeSrcId(e)))
+      );
+      const rows = [...usedDatasetIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((ds) => {
+          const cardEdge = EDGES.find((e) => e.label === "DOCUMENTED_BY" && edgeSrcId(e) === ds.id);
+          const card = cardEdge ? NODES.find((n) => n.id === edgeTgtId(cardEdge)) : null;
+          const updated = String(card?.detail?.Updated || "");
+          const institutionFromCard = String(card?.detail?.Institution || "").toLowerCase();
+          const sampleSources = [...sampleIdsForDatasetNode(ds.id)]
+            .map((sid) => NODES.find((n) => n.id === sid)?.detail?.Source)
+            .filter(Boolean)
+            .map((v) => String(v).toLowerCase());
+          const hasInstitution = institution
+            ? institutionFromCard.includes(institution) || sampleSources.some((s) => s.includes(institution))
+            : true;
+          const d = parseDate(updated);
+          const yearOk = d ? d.getUTCFullYear() > year : false;
+          return {
+            id: ds.id,
+            label: labelSingleLine(ds.label),
+            updated,
+            institution: card?.detail?.Institution || "unknown",
+            hasInstitution,
+            yearOk,
+          };
+        })
+        .filter((r) => r.hasInstitution && r.yearOk)
+        .map(({ hasInstitution, yearOk, ...rest }) => rest);
+      return { rows, summary: { institution: params.institution || "", afterYear: year, count: rows.length } };
     }
     case "cross_model_donor_leakage": {
       const genomicId = params.genomicModelId || "model_genomic";
@@ -697,6 +893,12 @@ Available intents:
 - training_donors_by_models
 - training_donor_overlap_between_models
 - disease_composition_for_model_training
+- donor_modality_availability
+- qc_pipeline_for_model_modality
+- governance_events_by_period
+- models_need_reeval_after_donor_qc
+- qc_pipeline_owner
+- institution_datasets_used_after_year
 - cross_model_donor_leakage
 - cross_modality_embedding_leakage
 - train_eval_distribution_drift
@@ -727,6 +929,12 @@ const INTENT_ENUM = [
   "training_donors_by_models",
   "training_donor_overlap_between_models",
   "disease_composition_for_model_training",
+  "donor_modality_availability",
+  "qc_pipeline_for_model_modality",
+  "governance_events_by_period",
+  "models_need_reeval_after_donor_qc",
+  "qc_pipeline_owner",
+  "institution_datasets_used_after_year",
   "cross_model_donor_leakage",
   "cross_modality_embedding_leakage",
   "train_eval_distribution_drift",
@@ -841,6 +1049,32 @@ const getForcedToolUses = (userMsg) => {
 
   if (q.includes("dataset cards") && q.includes("genomic fm") && q.includes("model card")) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "card_links", params: { modelId: "model_genomic" } } }];
+  }
+  if (q.includes("what datasets trained") && (q.includes("scfm-v1") || q.includes("scfm v1") || q.includes("single-cell fm v1") || q.includes("single cell fm v1"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "datasets_for_model", params: { modelId: "model_scfm" } } }];
+  }
+  if (q.includes("downstream of scrna") || (q.includes("which models") && q.includes("scrna"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_for_dataset", params: { datasetType: "scRNA-seq" } } }];
+  }
+  if ((q.includes("hpap-") || q.includes("hpap ")) && q.includes("wgs") && (q.includes("available") || q.includes("可用") || q.includes("available for use"))) {
+    const donorCode = extractDonorCodeFromQuery(userMsg) || extractDonorCodeFromQuery(q) || "";
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "donor_modality_availability", params: { donorCode, modality: "WGS" } } }];
+  }
+  if (q.includes("what qc pipeline produced scrna") && (q.includes("scfm-v1") || q.includes("scfm v1") || q.includes("single-cell fm"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "qc_pipeline_for_model_modality", params: { modelId: "model_scfm", modality: "scRNA-seq" } } }];
+  }
+  if (q.includes("governance events") && (q.includes("2025-q2") || q.includes("2025 q2"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "governance_events_by_period", params: { period: "2025-Q2" } } }];
+  }
+  if (q.includes("need re-eval") && (q.includes("hpap-") || q.includes("hpap "))) {
+    const donorCode = extractDonorCodeFromQuery(userMsg) || extractDonorCodeFromQuery(q) || "";
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_need_reeval_after_donor_qc", params: { donorCode } } }];
+  }
+  if ((q.includes("who is responsible") || q.includes("负责人")) && q.includes("qc pipeline") && (q.includes("scrna-v4") || q.includes("scrna v4") || q.includes("scrna"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "qc_pipeline_owner", params: { query: userMsg } } }];
+  }
+  if (q.includes("vanderbilt") && q.includes("datasets") && (q.includes("post-2024") || q.includes("after 2024"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "institution_datasets_used_after_year", params: { institution: "Vanderbilt", year: 2024 } } }];
   }
   if (q.includes("which models used") && (q.includes("scrna") || q.includes("sc rna") || q.includes("scRNA".toLowerCase()))) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_for_dataset", params: { datasetType: "scRNA-seq" } } }];
@@ -1019,7 +1253,16 @@ const getForcedToolUses = (userMsg) => {
 
 const formatIntentAnswer = (intent, params, result) => {
   const rows = result?.rows || [];
-  if (!rows.length && intent !== "shared_donors_three_fms" && intent !== "training_donor_overlap_between_models") {
+  if (
+    !rows.length &&
+    intent !== "shared_donors_three_fms" &&
+    intent !== "training_donor_overlap_between_models" &&
+    intent !== "governance_events_by_period" &&
+    intent !== "qc_pipeline_for_model_modality" &&
+    intent !== "models_need_reeval_after_donor_qc" &&
+    intent !== "qc_pipeline_owner" &&
+    intent !== "institution_datasets_used_after_year"
+  ) {
     return `No matching records were found in the current graph for ${intent.replace(/_/g, " ")}.`;
   }
 
@@ -1081,6 +1324,53 @@ const formatIntentAnswer = (intent, params, result) => {
         `${s.modelLabel} training donors: ${s.donorCount ?? rows.length}`,
         `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}%`,
         `Counts: T1D=${c.T1D ?? 0}, Control=${c.Control ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0}`,
+      ].join("\n");
+    }
+    case "donor_modality_availability": {
+      const r = rows[0] || {};
+      return `${r.donorCode || "Donor"} ${r.modality || "modality"} availability: ${r.available ? "YES" : "NO"} (raw=${r.rawValue || "n/a"})`;
+    }
+    case "qc_pipeline_for_model_modality": {
+      const s = result?.summary || {};
+      if (!rows.length) return `No QC pipeline lineage found for ${s.modelLabel || s.modelId || "model"} with the requested modality.`;
+      const head = s.trainingLinked
+        ? `QC pipeline(s) in training lineage of ${s.modelLabel || s.modelId}:`
+        : `No direct training linkage found for requested model+modality; showing modality-level QC pipeline(s):`;
+      return [head, ...rows.map((r) => [
+        `${r.datasetLabel}`,
+        `-> ${r.pipelineLabel || "pipeline not found"}`,
+        r.pipelineDetail?.Version ? `(version ${r.pipelineDetail.Version})` : "",
+        r.pipelineDetail?.Contact ? `contact: ${r.pipelineDetail.Contact}` : "",
+      ].filter(Boolean).join(" "))].join("\n");
+    }
+    case "governance_events_by_period": {
+      const s = result?.summary || {};
+      return [
+        `Governance events in ${s.period || "period"}: ${s.count ?? rows.length}`,
+        rows.length ? rows.map((r) => `- ${r.label} [${r.type}] updated ${r.updated || "unknown"}`).join("\n") : "No matching update events in current graph.",
+      ].join("\n");
+    }
+    case "models_need_reeval_after_donor_qc": {
+      const s = result?.summary || {};
+      if (!s.found) return `No donor matched ${s.donorCode || "input donor"} in current graph.`;
+      return [
+        `Models needing re-eval after ${s.donorCode} re-QC: ${s.impactedModelCount ?? rows.length}`,
+        rows.length ? rows.map((r) => `- ${r.label} (${r.type})`).join("\n") : "none",
+      ].join("\n");
+    }
+    case "qc_pipeline_owner": {
+      const s = result?.summary || {};
+      if (!rows.length) return "No matching QC pipeline owner found in current graph.";
+      const head = s.requestedVersion && !s.exactVersionFound
+        ? `No exact ${s.requestedVersion} pipeline found; showing closest matches.`
+        : "QC pipeline owner(s):";
+      return [head, ...rows.map((r) => `- ${r.pipelineLabel} (${r.version}): ${r.contact} <${r.email}>`)].join("\n");
+    }
+    case "institution_datasets_used_after_year": {
+      const s = result?.summary || {};
+      return [
+        `Datasets used after ${s.afterYear} for institution "${s.institution}": ${s.count ?? rows.length}`,
+        rows.length ? rows.map((r) => `- ${r.label} (updated ${r.updated || "unknown"}, institution=${r.institution || "unknown"})`).join("\n") : "none",
       ].join("\n");
     }
     case "cross_model_donor_leakage": {
