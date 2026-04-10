@@ -253,8 +253,22 @@ function queryGraph(intent, params) {
       return { rows: tasks.map(t=>({ id:t.id, label:labelSingleLine(t.label), detail:t.detail })) };
     }
     case "provenance_chain": {
-      const node = resolveNode(params.nodeId) || resolveNode(params.query);
-      const nodeId = node?.id || params.nodeId;
+      const candidate =
+        params.nodeId ||
+        params.modelId ||
+        params.datasetId ||
+        params.mcId ||
+        params.dcId ||
+        params.query ||
+        "";
+      const node =
+        resolveNode(candidate) ||
+        resolveNode(params.nodeId) ||
+        resolveNode(params.modelId, ["Model", "FineTunedModel"]) ||
+        resolveNode(params.datasetId, ["ProcessedData", "RawData"]) ||
+        resolveNode(params.query);
+      const nodeId = node?.id || params.nodeId || params.modelId || params.datasetId || null;
+      if (!nodeId) return { rows: [] };
       const visited = new Set(); const chain = [];
       const traverse = (id) => {
         if (visited.has(id)) return; visited.add(id);
@@ -1049,6 +1063,12 @@ const getForcedToolUses = (userMsg) => {
 
   if (q.includes("dataset cards") && q.includes("genomic fm") && q.includes("model card")) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "card_links", params: { modelId: "model_genomic" } } }];
+  }
+  if (
+    (q.includes("provenance chain") || q.includes("lineage chain") || q.includes("谱系链") || q.includes("溯源链")) &&
+    q.includes("genomic fm")
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "provenance_chain", params: { nodeId: "model_genomic" } } }];
   }
   if (q.includes("what datasets trained") && (q.includes("scfm-v1") || q.includes("scfm v1") || q.includes("single-cell fm v1") || q.includes("single cell fm v1"))) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "datasets_for_model", params: { modelId: "model_scfm" } } }];
