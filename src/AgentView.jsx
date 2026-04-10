@@ -57,6 +57,92 @@ function queryGraph(intent, params) {
     });
     return donorIds;
   };
+  const donorNodes = NODES.filter((n) => n.id.startsWith("donor_hpap_"));
+  const donorNodeIds = new Set(donorNodes.map((n) => n.id));
+  const donorCodeToNode = new Map(
+    donorNodes.map((n) => [String(labelSingleLine(n.label)).toUpperCase(), n])
+  );
+  const diseaseTagFromDonor = (donorNode, overrides = {}) => {
+    const donorCode = String(labelSingleLine(donorNode?.label || "")).toUpperCase();
+    const overrideValue = overrides[donorCode];
+    const stageRaw = String(
+      overrideValue || donorNode?.detail?.["T1D stage__2"] || donorNode?.detail?.["T1D stage"] || ""
+    ).toLowerCase();
+    const diseaseStatus = String(donorNode?.detail?.DiseaseStatus || "").toLowerCase();
+    if (
+      stageRaw.includes("stage 3") ||
+      stageRaw.includes("t1d onset") ||
+      diseaseStatus.includes("t1dm") ||
+      diseaseStatus.includes("t1d")
+    ) {
+      return "T1D";
+    }
+    if (
+      stageRaw.includes("stage 1") ||
+      stageRaw.includes("stage 2") ||
+      stageRaw.includes("aab+") ||
+      diseaseStatus.includes("gad+") ||
+      diseaseStatus.includes("aab+")
+    ) {
+      return "AAb+";
+    }
+    if (diseaseStatus.includes("t2dm") || diseaseStatus.includes("t2d")) return "T2D";
+    if (
+      diseaseStatus.includes("no hx diab") ||
+      diseaseStatus.includes("no hx diabetes") ||
+      diseaseStatus.includes("control")
+    ) {
+      return "Control";
+    }
+    return "Unknown";
+  };
+  const donorIdFromSampleId = (sampleId) => {
+    const direct = EDGES.find((e) => e.label === "HAD_MEMBER" && edgeTgtId(e) === sampleId && donorNodeIds.has(edgeSrcId(e)));
+    if (direct) return edgeSrcId(direct);
+    const sampleNode = NODES.find((n) => n.id === sampleId);
+    const donorCode = String(sampleNode?.detail?.Donor || "").toUpperCase();
+    return donorCodeToNode.get(donorCode)?.id || null;
+  };
+  const sampleIdsForDatasetNode = (datasetNodeId) => {
+    const childSplitIds = EDGES
+      .filter((e) => e.label === "DERIVED_FROM" && edgeSrcId(e) === datasetNodeId)
+      .map((e) => edgeTgtId(e));
+    const sourceIds = childSplitIds.length ? childSplitIds : [datasetNodeId];
+    const sampleIds = new Set();
+    sourceIds.forEach((srcId) => {
+      EDGES
+        .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === srcId)
+        .forEach((e) => sampleIds.add(edgeTgtId(e)));
+    });
+    return sampleIds;
+  };
+  const donorIdsForDatasetNode = (datasetNodeId) => {
+    const donorIds = new Set();
+    sampleIdsForDatasetNode(datasetNodeId).forEach((sampleId) => {
+      const donorId = donorIdFromSampleId(sampleId);
+      if (donorId) donorIds.add(donorId);
+    });
+    return donorIds;
+  };
+  const modelTrainEvalSplitDatasetIds = (modelId) => {
+    const training = EDGES.filter((e) => e.label === "TRAINED_ON" && edgeTgtId(e) === modelId).map((e) => edgeSrcId(e));
+    const evaluation = EDGES.filter((e) => e.label === "EVALUATED_ON" && edgeTgtId(e) === modelId).map((e) => edgeSrcId(e));
+    return { training, evaluation };
+  };
+  const parentDatasetOfSplit = (splitDatasetId) => {
+    const edge = EDGES.find((e) => e.label === "DERIVED_FROM" && edgeTgtId(e) === splitDatasetId);
+    return edge ? edgeSrcId(edge) : splitDatasetId;
+  };
+  const donorIdsForModelSplit = (modelId, splitType = "training") => {
+    const { training, evaluation } = modelTrainEvalSplitDatasetIds(modelId);
+    const splitDatasetIds = splitType === "evaluation" ? evaluation : training;
+    const donorIds = new Set();
+    splitDatasetIds.forEach((dsId) => {
+      donorIdsForDatasetNode(dsId).forEach((d) => donorIds.add(d));
+    });
+    return donorIds;
+  };
+  const ratio = (numerator, denominator) => (denominator ? numerator / denominator : 0);
 
   switch (intent) {
     case "datasets_for_model": {
@@ -281,6 +367,276 @@ function queryGraph(intent, params) {
         },
       };
     }
+    case "cross_model_donor_leakage": {
+      const genomicId = params.genomicModelId || "model_genomic";
+      const scfmId = params.scfmModelId || "model_scfm";
+      const spatialId = params.spatialModelId || "model_spatial";
+      const genomic = donorIdsForModelTraining(genomicId);
+      const scfm = donorIdsForModelTraining(scfmId);
+      const spatial = donorIdsForModelTraining(spatialId);
+      const overlap = [...genomic].filter((d) => scfm.has(d) && spatial.has(d)).sort();
+      return {
+        rows: overlap.map((id) => {
+          const node = NODES.find((n) => n.id === id);
+          return { id, label: labelSingleLine(node?.label || id), diseaseTag: diseaseTagFromDonor(node) };
+        }),
+        summary: {
+          overlapCount: overlap.length,
+          totalDonors: donorNodes.length,
+          leakageRatio: ratio(overlap.length, donorNodes.length),
+          genomicTrainingDonors: genomic.size,
+          scfmTrainingDonors: scfm.size,
+          spatialTrainingDonors: spatial.size,
+        },
+      };
+    }
+    case "cross_modality_embedding_leakage": {
+      const sourceModelId = params.sourceModelId || "model_scfm";
+      const targetModelId = params.targetModelId || "model_genomic";
+
+      const sourceTrainingDonors = donorIdsForModelTraining(sourceModelId);
+      const targetTrainingDonors = donorIdsForModelTraining(targetModelId);
+
+      const sourceEmbeddings = EDGES
+        .filter((e) => e.label === "EMBEDDED_BY" && edgeTgtId(e) === sourceModelId)
+        .map((e) => edgeSrcId(e));
+
+      const embeddingToTargetEval = sourceEmbeddings.filter((embId) =>
+        EDGES.some((e) => e.label === "EVALUATED_ON" && edgeSrcId(e) === embId && edgeTgtId(e) === targetModelId)
+      );
+
+      const sourceDatasetIds = new Set();
+      sourceEmbeddings.forEach((embId) => {
+        EDGES
+          .filter((e) => e.label === "DERIVED_FROM" && edgeTgtId(e) === embId)
+          .forEach((e) => sourceDatasetIds.add(edgeSrcId(e)));
+      });
+      const embeddingDonorIds = new Set();
+      [...sourceDatasetIds].forEach((dsId) => {
+        donorIdsForDatasetNode(dsId).forEach((d) => embeddingDonorIds.add(d));
+      });
+
+      const leakageDonorIds = [...embeddingDonorIds].filter((d) => sourceTrainingDonors.has(d) && targetTrainingDonors.has(d)).sort();
+      const overlapBulkRnaTraining = [...targetTrainingDonors].filter((d) => sourceTrainingDonors.has(d)).sort();
+      return {
+        rows: leakageDonorIds.map((id) => ({ id, label: labelSingleLine(NODES.find((n) => n.id === id)?.label || id) })),
+        summary: {
+          sourceModelId,
+          targetModelId,
+          sourceEmbeddingCount: sourceEmbeddings.length,
+          sourceEmbeddingIds: sourceEmbeddings,
+          embeddingUsedForTargetEvaluation: embeddingToTargetEval.length > 0,
+          embeddingEvalEdgeCount: embeddingToTargetEval.length,
+          sourceTrainingDonors: sourceTrainingDonors.size,
+          targetTrainingDonors: targetTrainingDonors.size,
+          sourceEmbeddingDonors: embeddingDonorIds.size,
+          crossTrainingOverlapDonors: overlapBulkRnaTraining.length,
+          leakageDonorCount: leakageDonorIds.length,
+          leakageRatioInEmbeddingDonors: ratio(leakageDonorIds.length, embeddingDonorIds.size),
+        },
+      };
+    }
+    case "train_eval_distribution_drift": {
+      const modelId = params.modelId || "model_genomic";
+      const trainingDonors = donorIdsForModelSplit(modelId, "training");
+      const evaluationDonors = donorIdsForModelSplit(modelId, "evaluation");
+      const defaultReclassifications = params.reclassifications || {
+        "HPAP-002": "T1D onset",
+        "HPAP-011": "T1D onset",
+        "HPAP-015": "T1D onset",
+      };
+
+      const summarize = (donorIdSet, overrides = {}) => {
+        const counts = { T1D: 0, "AAb+": 0, T2D: 0, Control: 0, Unknown: 0 };
+        [...donorIdSet].forEach((id) => {
+          const donorNode = NODES.find((n) => n.id === id);
+          counts[diseaseTagFromDonor(donorNode, overrides)] += 1;
+        });
+        const total = [...donorIdSet].length;
+        return {
+          total,
+          counts,
+          t1dRatio: ratio(counts.T1D, total),
+          controlRatio: ratio(counts.Control, total),
+        };
+      };
+
+      const beforeTrain = summarize(trainingDonors);
+      const beforeEval = summarize(evaluationDonors);
+      const afterTrain = summarize(trainingDonors, defaultReclassifications);
+      const afterEval = summarize(evaluationDonors, defaultReclassifications);
+      return {
+        rows: Object.entries(defaultReclassifications).map(([donorCode, newStage]) => ({ donorCode, newStage })),
+        summary: {
+          modelId,
+          before: { training: beforeTrain, evaluation: beforeEval },
+          after: { training: afterTrain, evaluation: afterEval },
+          shift: {
+            trainingT1DDelta: afterTrain.counts.T1D - beforeTrain.counts.T1D,
+            evaluationT1DDelta: afterEval.counts.T1D - beforeEval.counts.T1D,
+            trainingT1DRatioDelta: afterTrain.t1dRatio - beforeTrain.t1dRatio,
+            evaluationT1DRatioDelta: afterEval.t1dRatio - beforeEval.t1dRatio,
+          },
+        },
+      };
+    }
+    case "upstream_metadata_impact": {
+      const donorCode = String(params.donorCode || params.donorId || "HPAP-002").toUpperCase();
+      const oldStage = params.fromStage || "AAb+";
+      const newStage = params.toStage || "T1D onset";
+      const donorNode = donorCodeToNode.get(donorCode);
+      if (!donorNode) {
+        return { rows: [], summary: { donorCode, found: false } };
+      }
+
+      const donorId = donorNode.id;
+      const donorSampleIds = EDGES
+        .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === donorId)
+        .map((e) => edgeTgtId(e));
+      const modelExposureMap = new Map();
+      donorSampleIds.forEach((sampleId) => {
+        EDGES
+          .filter((e) => e.label === "HAD_MEMBER" && edgeTgtId(e) === sampleId)
+          .forEach((memberEdge) => {
+            const splitDatasetId = edgeSrcId(memberEdge);
+            const trainEdges = EDGES.filter((e) => (e.label === "TRAINED_ON" || e.label === "EVALUATED_ON") && edgeSrcId(e) === splitDatasetId);
+            trainEdges.forEach((te) => {
+              const modelId = edgeTgtId(te);
+              const parentDatasetId = parentDatasetOfSplit(splitDatasetId);
+              const key = `${modelId}:${te.label}`;
+              if (!modelExposureMap.has(key)) {
+                modelExposureMap.set(key, {
+                  modelId,
+                  modelLabel: labelSingleLine(NODES.find((n) => n.id === modelId)?.label || modelId),
+                  split: te.label === "TRAINED_ON" ? "training" : "evaluation",
+                  parentDatasets: new Set(),
+                  sampleIds: new Set(),
+                });
+              }
+              const entry = modelExposureMap.get(key);
+              entry.parentDatasets.add(parentDatasetId);
+              entry.sampleIds.add(sampleId);
+            });
+          });
+      });
+
+      const impactedModels = [...modelExposureMap.values()].map((r) => ({
+        modelId: r.modelId,
+        modelLabel: r.modelLabel,
+        split: r.split,
+        parentDatasets: [...r.parentDatasets],
+        impactedSampleCount: r.sampleIds.size,
+      }));
+      const impactedModelIds = new Set(impactedModels.map((m) => m.modelId));
+
+      const impactedFineTunedModelIds = new Set();
+      impactedModelIds.forEach((mid) => {
+        EDGES
+          .filter((e) => e.label === "FINETUNED_ON" && edgeTgtId(e) === mid)
+          .forEach((e) => impactedFineTunedModelIds.add(edgeSrcId(e)));
+      });
+      impactedModelIds.forEach((mid) => {
+        EDGES
+          .filter((e) => e.label === "EMBEDDED_BY" && edgeTgtId(e) === mid)
+          .forEach((e) => {
+            const embId = edgeSrcId(e);
+            EDGES
+              .filter((x) => x.label === "FINETUNED_ON" && edgeTgtId(x) === embId)
+              .forEach((x) => impactedFineTunedModelIds.add(edgeSrcId(x)));
+          });
+      });
+
+      const allImpactedModelIds = new Set([...impactedModelIds, ...impactedFineTunedModelIds]);
+      const impactedTasks = EDGES
+        .filter((e) => e.label === "ENABLES" && allImpactedModelIds.has(edgeSrcId(e)))
+        .map((e) => NODES.find((n) => n.id === edgeTgtId(e)))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label) }));
+
+      const totalSamples = donorSampleIds.length;
+      const impactedSampleSet = new Set();
+      impactedModels.forEach((m) => m.parentDatasets.forEach(() => {}));
+      impactedModels.forEach((m) => {
+        const modelExposureKey = `${m.modelId}:${m.split === "training" ? "TRAINED_ON" : "EVALUATED_ON"}`;
+        const source = modelExposureMap.get(modelExposureKey);
+        if (source) source.sampleIds.forEach((sid) => impactedSampleSet.add(sid));
+      });
+      const impactedSampleCount = impactedSampleSet.size;
+      const riskScore = impactedModels.length + impactedTasks.length;
+      const predictionShiftEstimate = riskScore >= 6 ? "high" : riskScore >= 3 ? "medium" : "low";
+
+      return {
+        rows: impactedModels,
+        summary: {
+          found: true,
+          donorCode,
+          donorLabel: labelSingleLine(donorNode.label),
+          reclassification: { from: oldStage, to: newStage },
+          donorSampleCount: totalSamples,
+          impactedSampleCount,
+          impactedSampleRatio: ratio(impactedSampleCount, totalSamples),
+          impactedModelCount: allImpactedModelIds.size,
+          impactedTaskCount: impactedTasks.length,
+          impactedTasks,
+          predictionShiftEstimate,
+        },
+      };
+    }
+    case "shared_validation_datasets_across_fms": {
+      const genomicId = params.genomicModelId || "model_genomic";
+      const scfmId = params.scfmModelId || "model_scfm";
+      const genomicEvalSplits = EDGES
+        .filter((e) => e.label === "EVALUATED_ON" && edgeTgtId(e) === genomicId)
+        .map((e) => edgeSrcId(e));
+      const genomicEvalParents = new Set(genomicEvalSplits.map((sid) => parentDatasetOfSplit(sid)));
+
+      const scfmEmbeddingIds = EDGES
+        .filter((e) => e.label === "EMBEDDED_BY" && edgeTgtId(e) === scfmId)
+        .map((e) => edgeSrcId(e));
+      const scfmEmbeddingSourceDatasets = new Set();
+      scfmEmbeddingIds.forEach((embId) => {
+        EDGES
+          .filter((e) => e.label === "DERIVED_FROM" && edgeTgtId(e) === embId)
+          .forEach((e) => scfmEmbeddingSourceDatasets.add(edgeSrcId(e)));
+      });
+      const overlap = [...genomicEvalParents].filter((id) => scfmEmbeddingSourceDatasets.has(id)).sort();
+      return {
+        rows: overlap.map((id) => ({
+          id,
+          label: labelSingleLine(NODES.find((n) => n.id === id)?.label || id),
+        })),
+        summary: {
+          genomicEvaluationDatasetCount: genomicEvalParents.size,
+          scfmEmbeddingSourceDatasetCount: scfmEmbeddingSourceDatasets.size,
+          overlapCount: overlap.length,
+          scfmEmbeddingIds,
+        },
+      };
+    }
+    case "disease_composition_bias_three_fms": {
+      const genomicId = params.genomicModelId || "model_genomic";
+      const scfmId = params.scfmModelId || "model_scfm";
+      const spatialId = params.spatialModelId || "model_spatial";
+      const shared = [...donorIdsForModelTraining(genomicId)].filter(
+        (id) => donorIdsForModelTraining(scfmId).has(id) && donorIdsForModelTraining(spatialId).has(id)
+      );
+      const counts = { T1D: 0, "AAb+": 0, T2D: 0, Control: 0, Unknown: 0 };
+      shared.forEach((id) => {
+        counts[diseaseTagFromDonor(NODES.find((n) => n.id === id))] += 1;
+      });
+      return {
+        rows: shared.sort().map((id) => {
+          const node = NODES.find((n) => n.id === id);
+          return { id, label: labelSingleLine(node?.label || id), diseaseTag: diseaseTagFromDonor(node) };
+        }),
+        summary: {
+          sharedDonorCount: shared.length,
+          composition: counts,
+          t1dRatio: ratio(counts.T1D, shared.length),
+          controlRatio: ratio(counts.Control, shared.length),
+        },
+      };
+    }
     default:
       return { rows:[], error:"Unknown intent" };
   }
@@ -310,6 +666,12 @@ Available intents:
 - shared_donors_three_fms
 - training_donors_by_models
 - training_donor_overlap_between_models
+- cross_model_donor_leakage
+- cross_modality_embedding_leakage
+- train_eval_distribution_drift
+- upstream_metadata_impact
+- shared_validation_datasets_across_fms
+- disease_composition_bias_three_fms
 Workflow:
 1) Pick the best intent and params.
 2) Call queryGraph.
@@ -324,7 +686,7 @@ Answer style requirements:
 const AGENT_TOOLS = [
   { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models"], description:"The query pattern to execute" },
+      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models","cross_model_donor_leakage","cross_modality_embedding_leakage","train_eval_distribution_drift","upstream_metadata_impact","shared_validation_datasets_across_fms","disease_composition_bias_three_fms"], description:"The query pattern to execute" },
       params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
     }, required:["intent","params"] }
   }
@@ -372,6 +734,69 @@ const getForcedToolUses = (userMsg) => {
   }
   if (q.includes("who ran the wgs pipeline")) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "node_detail", params: { query: "WGS" } } }];
+  }
+  if (
+    q.includes("哪些donor") &&
+    (q.includes("三个fm") || (q.includes("genomic fm") && q.includes("spatial fm") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm")))) &&
+    (q.includes("training") || q.includes("训练"))
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "cross_model_donor_leakage", params: {} } }];
+  }
+  if (
+    (
+      q.includes("embedding leakage") ||
+      q.includes("embedding 泄露") ||
+      q.includes("embedding泄露") ||
+      q.includes("data leakage") ||
+      q.includes("training data交叉") ||
+      q.includes("training data 交叉") ||
+      q.includes("training交叉") ||
+      q.includes("训练 data 交叉") ||
+      q.includes("数据交叉") ||
+      q.includes("leakage")
+    ) &&
+    (q.includes("embedding")) &&
+    (q.includes("genomic fm")) &&
+    (q.includes("scfm") || q.includes("single-cell fm") || q.includes("single cell fm"))
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "cross_modality_embedding_leakage", params: {} } }];
+  }
+  if (
+    (
+      q.includes("distribution drift") ||
+      q.includes("分布漂移") ||
+      q.includes("drift") ||
+      q.includes("reclassification") ||
+      q.includes("reclassify")
+    ) &&
+    (q.includes("training") || q.includes("validation") || q.includes("evaluation") || q.includes("80/20") || q.includes("分配"))
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "train_eval_distribution_drift", params: {} } }];
+  }
+  if (
+    (q.includes("metadata") || q.includes("reclassify") || q.includes("reclassification") || q.includes("上游")) &&
+    (q.includes("impact") || q.includes("影响"))
+  ) {
+    const donorMatch = q.match(/hpap-\d{3}/);
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "upstream_metadata_impact", params: { donorCode: donorMatch ? donorMatch[0].toUpperCase() : "HPAP-002" } },
+    }];
+  }
+  if (
+    (q.includes("shared validation") || q.includes("公共数据集") || q.includes("共用") || q.includes("overlap")) &&
+    q.includes("genomic fm") &&
+    (q.includes("single-cell") || q.includes("single cell") || q.includes("scfm") || q.includes("embedding"))
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "shared_validation_datasets_across_fms", params: {} } }];
+  }
+  if (
+    q.includes("t1d") &&
+    (q.includes("比例") || q.includes("ratio") || q.includes("bias") || q.includes("composition")) &&
+    q.includes("三个fm")
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "disease_composition_bias_three_fms", params: {} } }];
   }
   if (
     q.includes("donor") &&
@@ -492,6 +917,75 @@ const formatIntentAnswer = (intent, params, result) => {
         `${s.modelALabel}: ${s.modelADonorCount} donors`,
         `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
         `Overlap ratio: ${pctA}% of model A, ${pctB}% of model B`,
+      ].join("\n");
+    }
+    case "cross_model_donor_leakage": {
+      const s = result?.summary || {};
+      const donors = rows.map((r) => r.label);
+      const donorText = donors.length ? donors.join(", ") : "none";
+      return [
+        `Leakage donors across training sets (Genomic + Single-cell + Spatial): ${s.overlapCount ?? rows.length}`,
+        `Leakage ratio vs all donors: ${((s.leakageRatio || 0) * 100).toFixed(1)}% (${s.overlapCount ?? rows.length}/${s.totalDonors ?? "?"})`,
+        `Training donor counts -> Genomic: ${s.genomicTrainingDonors ?? "?"}, Single-cell: ${s.scfmTrainingDonors ?? "?"}, Spatial: ${s.spatialTrainingDonors ?? "?"}`,
+        `Donor list: ${donorText}`,
+      ].join("\n");
+    }
+    case "cross_modality_embedding_leakage": {
+      const s = result?.summary || {};
+      const donors = rows.map((r) => r.label);
+      return [
+        `Cross-modality embedding leakage check (scFM embedding -> Genomic FM evaluation):`,
+        `Source embeddings from scFM: ${s.sourceEmbeddingCount ?? 0}`,
+        `Explicit embedding->Genomic evaluation edge present: ${s.embeddingUsedForTargetEvaluation ? "yes" : "no"}`,
+        `Potential leakage donors (in scFM training and Genomic training, and covered by scFM embeddings): ${s.leakageDonorCount ?? rows.length}`,
+        `Leakage ratio within embedding donors: ${((s.leakageRatioInEmbeddingDonors || 0) * 100).toFixed(1)}%`,
+        `Donor list: ${donors.length ? donors.join(", ") : "none"}`,
+      ].join("\n");
+    }
+    case "train_eval_distribution_drift": {
+      const s = result?.summary || {};
+      const bTrain = s.before?.training || {};
+      const bEval = s.before?.evaluation || {};
+      const aTrain = s.after?.training || {};
+      const aEval = s.after?.evaluation || {};
+      const sh = s.shift || {};
+      return [
+        `Training/Evaluation distribution drift simulation for ${s.modelId}:`,
+        `Before -> training T1D:Control = ${bTrain.counts?.T1D ?? 0}:${bTrain.counts?.Control ?? 0}, evaluation T1D:Control = ${bEval.counts?.T1D ?? 0}:${bEval.counts?.Control ?? 0}`,
+        `After  -> training T1D:Control = ${aTrain.counts?.T1D ?? 0}:${aTrain.counts?.Control ?? 0}, evaluation T1D:Control = ${aEval.counts?.T1D ?? 0}:${aEval.counts?.Control ?? 0}`,
+        `Shift  -> training T1D delta: ${sh.trainingT1DDelta ?? 0} (${((sh.trainingT1DRatioDelta || 0) * 100).toFixed(1)} pp), evaluation T1D delta: ${sh.evaluationT1DDelta ?? 0} (${((sh.evaluationT1DRatioDelta || 0) * 100).toFixed(1)} pp)`,
+        rows.length ? `Applied reclassifications: ${rows.map((r) => `${r.donorCode}->${r.newStage}`).join(", ")}` : "Applied reclassifications: none",
+      ].join("\n");
+    }
+    case "upstream_metadata_impact": {
+      const s = result?.summary || {};
+      if (!s.found) return `No donor matched ${s.donorCode} in the current graph.`;
+      const tasks = (s.impactedTasks || []).map((t) => t.label);
+      const topImpacted = rows.slice(0, 12).map((r) => `${r.modelLabel} [${r.split}]`);
+      return [
+        `Upstream metadata impact for ${s.donorLabel}: ${s.reclassification?.from} -> ${s.reclassification?.to}`,
+        `Impacted samples: ${s.impactedSampleCount}/${s.donorSampleCount} (${((s.impactedSampleRatio || 0) * 100).toFixed(1)}%)`,
+        `Impacted models: ${s.impactedModelCount}, impacted downstream tasks: ${s.impactedTaskCount}`,
+        `Prediction shift estimate: ${s.predictionShiftEstimate}`,
+        `Model exposure: ${topImpacted.length ? topImpacted.join("; ") : "none"}`,
+        `Downstream tasks: ${tasks.length ? tasks.join(", ") : "none"}`,
+      ].join("\n");
+    }
+    case "shared_validation_datasets_across_fms": {
+      const s = result?.summary || {};
+      return [
+        `Shared datasets between Genomic FM evaluation inputs and Single-cell FM embedding sources: ${s.overlapCount ?? rows.length}`,
+        `Genomic evaluation datasets: ${s.genomicEvaluationDatasetCount ?? "?"}, scFM embedding-source datasets: ${s.scfmEmbeddingSourceDatasetCount ?? "?"}`,
+        `Overlap list: ${rows.length ? rows.map((r) => r.label).join(", ") : "none"}`,
+      ].join("\n");
+    }
+    case "disease_composition_bias_three_fms": {
+      const s = result?.summary || {};
+      const c = s.composition || {};
+      return [
+        `Disease composition bias among donors shared by 3 FM training sets:`,
+        `Shared donors: ${s.sharedDonorCount ?? rows.length}`,
+        `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}% (T1D=${c.T1D ?? 0}, Control=${c.Control ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0})`,
       ].join("\n");
     }
     default:
