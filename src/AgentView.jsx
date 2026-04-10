@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
 import { NODES, EDGES } from "./graphData";
+import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
 const edgeSrcId = e => typeof e.source === "object" ? e.source.id : e.source;
 const edgeTgtId = e => typeof e.target === "object" ? e.target.id : e.target;
 const normalizeLabel = (label = "") => String(label).replace(/\\n/g, "\n");
@@ -164,6 +165,20 @@ function queryGraph(intent, params) {
     }
     return [];
   };
+  const normalizeSplit = (raw = "") => {
+    const s = String(raw || "").toLowerCase();
+    if (s.includes("eval") || s.includes("validation") || s.includes("test") || s.includes("测试") || s.includes("验证")) return "evaluation";
+    return "training";
+  };
+  const asArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  const edgeMatch = (edge, labels) =>
+    !labels?.length || labels.map((x) => String(x || "").toUpperCase()).includes(String(edge.label || "").toUpperCase());
+  const nodeRow = (node) => ({
+    id: node.id,
+    label: labelSingleLine(node.label),
+    type: node.type,
+    detail: node.detail,
+  });
 
   switch (intent) {
     case "datasets_for_model": {
@@ -378,10 +393,12 @@ function queryGraph(intent, params) {
     case "training_donor_overlap_between_models": {
       const a = params.modelAId || "model_genomic";
       const b = params.modelBId || "model_scfm";
-      const aNode = NODES.find((n) => n.id === a);
-      const bNode = NODES.find((n) => n.id === b);
-      const aSet = donorIdsForModelTraining(a);
-      const bSet = donorIdsForModelTraining(b);
+      const splitA = normalizeSplit(params.splitA || params.split || "training");
+      const splitB = normalizeSplit(params.splitB || params.split || "training");
+      const aNode = resolveNode(a, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === a);
+      const bNode = resolveNode(b, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === b);
+      const aSet = donorIdsForModelSplit(aNode?.id || a, splitA);
+      const bSet = donorIdsForModelSplit(bNode?.id || b, splitB);
       const overlap = [...aSet].filter((id) => bSet.has(id)).sort();
       return {
         rows: overlap.map((id) => ({
@@ -391,14 +408,51 @@ function queryGraph(intent, params) {
         summary: {
           modelAId: a,
           modelBId: b,
-          modelALabel: labelSingleLine(aNode?.label || a),
-          modelBLabel: labelSingleLine(bNode?.label || b),
+          modelALabel: labelSingleLine(aNode?.label || (aNode?.id || a)),
+          modelBLabel: labelSingleLine(bNode?.label || (bNode?.id || b)),
+          splitA,
+          splitB,
           modelADonorCount: aSet.size,
           modelBDonorCount: bSet.size,
           overlapCount: overlap.length,
           overlapRatioA: aSet.size ? overlap.length / aSet.size : 0,
           overlapRatioB: bSet.size ? overlap.length / bSet.size : 0,
           sameModel: a === b,
+        },
+      };
+    }
+    case "donor_overlap_between_models": {
+      const aRef = params.modelAId || params.modelA || params.modelAName || "model_genomic";
+      const bRef = params.modelBId || params.modelB || params.modelBName || "model_scfm";
+      const splitA = normalizeSplit(params.splitA || params.split || "training");
+      const splitB = normalizeSplit(params.splitB || params.split || "training");
+      const aNode = resolveNode(aRef, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === aRef);
+      const bNode = resolveNode(bRef, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === bRef);
+      if (!aNode || !bNode) {
+        return { rows: [], summary: { found: false, modelA: aRef, modelB: bRef, splitA, splitB } };
+      }
+      const aSet = donorIdsForModelSplit(aNode.id, splitA);
+      const bSet = donorIdsForModelSplit(bNode.id, splitB);
+      const overlap = [...aSet].filter((id) => bSet.has(id)).sort();
+      return {
+        rows: overlap.map((id) => ({
+          id,
+          label: labelSingleLine(NODES.find((n) => n.id === id)?.label || id),
+        })),
+        summary: {
+          found: true,
+          modelAId: aNode.id,
+          modelBId: bNode.id,
+          modelALabel: labelSingleLine(aNode.label || aNode.id),
+          modelBLabel: labelSingleLine(bNode.label || bNode.id),
+          splitA,
+          splitB,
+          modelADonorCount: aSet.size,
+          modelBDonorCount: bSet.size,
+          overlapCount: overlap.length,
+          overlapRatioA: aSet.size ? overlap.length / aSet.size : 0,
+          overlapRatioB: bSet.size ? overlap.length / bSet.size : 0,
+          sameModel: aNode.id === bNode.id,
         },
       };
     }
@@ -877,6 +931,143 @@ function queryGraph(intent, params) {
         },
       };
     }
+    case "search_nodes": {
+      const query = String(params.query || "").trim().toLowerCase();
+      const typeHints = asArray(params.typeHints || params.types).map((t) => String(t || "").toLowerCase());
+      const limit = Math.max(1, Math.min(Number(params.limit || 20), 100));
+      if (!query) return { rows: [] };
+      const score = (node) => {
+        const id = String(node.id || "").toLowerCase();
+        const label = labelSingleLine(node.label).toLowerCase();
+        if (id === query || label === query) return 100;
+        if (id.startsWith(query) || label.startsWith(query)) return 80;
+        if (id.includes(query) || label.includes(query)) return 60;
+        return 0;
+      };
+      const rows = NODES
+        .filter((n) => !typeHints.length || typeHints.includes(String(n.type || "").toLowerCase()))
+        .map((n) => ({ node: n, s: score(n) }))
+        .filter((x) => x.s > 0)
+        .sort((a, b) => b.s - a.s || String(a.node.id).localeCompare(String(b.node.id)))
+        .slice(0, limit)
+        .map((x) => ({ ...nodeRow(x.node), score: x.s }));
+      return { rows };
+    }
+    case "get_neighbors": {
+      const seedIds = asArray(params.nodeIds || params.nodeId).map((x) => String(x || "").trim()).filter(Boolean);
+      const edgeLabels = asArray(params.edgeLabels || params.edgeTypes);
+      const direction = String(params.direction || "both").toLowerCase();
+      const depth = Math.max(1, Math.min(Number(params.depth || 1), 2));
+      const limit = Math.max(1, Math.min(Number(params.limit || 200), 500));
+      if (!seedIds.length) return { rows: [] };
+      const visited = new Set(seedIds);
+      let frontier = [...seedIds];
+      const rows = [];
+      for (let hop = 1; hop <= depth && frontier.length && rows.length < limit; hop += 1) {
+        const next = new Set();
+        frontier.forEach((nodeId) => {
+          const outEdges = (direction === "out" || direction === "both")
+            ? EDGES.filter((e) => edgeSrcId(e) === nodeId && edgeMatch(e, edgeLabels))
+            : [];
+          const inEdges = (direction === "in" || direction === "both")
+            ? EDGES.filter((e) => edgeTgtId(e) === nodeId && edgeMatch(e, edgeLabels))
+            : [];
+          [...outEdges, ...inEdges].forEach((e) => {
+            if (rows.length >= limit) return;
+            const srcId = edgeSrcId(e);
+            const tgtId = edgeTgtId(e);
+            const fromNode = NODES.find((n) => n.id === srcId);
+            const toNode = NODES.find((n) => n.id === tgtId);
+            rows.push({
+              hop,
+              edgeLabel: e.label,
+              fromId: srcId,
+              fromLabel: labelSingleLine(fromNode?.label || srcId),
+              fromType: fromNode?.type,
+              toId: tgtId,
+              toLabel: labelSingleLine(toNode?.label || tgtId),
+              toType: toNode?.type,
+            });
+            if (!visited.has(tgtId)) next.add(tgtId);
+            if (!visited.has(srcId)) next.add(srcId);
+          });
+        });
+        frontier = [...next];
+        frontier.forEach((id) => visited.add(id));
+      }
+      return { rows };
+    }
+    case "extract_donors": {
+      const nodeIds = asArray(params.nodeIds || params.nodeId).map((x) => String(x || "").trim()).filter(Boolean);
+      const split = String(params.split || "training").toLowerCase();
+      if (!nodeIds.length) return { rows: [] };
+      const donorIds = new Set();
+      nodeIds.forEach((nodeId) => {
+        if (donorNodeIds.has(nodeId)) {
+          donorIds.add(nodeId);
+          return;
+        }
+        const node = NODES.find((n) => n.id === nodeId);
+        if (!node) return;
+        if (String(node.type) === "Model" || String(node.type) === "FineTunedModel") {
+          donorIdsForModelSplit(nodeId, split === "evaluation" ? "evaluation" : "training").forEach((d) => donorIds.add(d));
+          return;
+        }
+        if (String(node.type) === "ProcessedData") {
+          donorIdsForDatasetNode(nodeId).forEach((d) => donorIds.add(d));
+          return;
+        }
+        if (String(node.type) === "RawData") {
+          const donorId = donorIdFromSampleId(nodeId);
+          if (donorId) donorIds.add(donorId);
+          return;
+        }
+        // Generic fallback: look for adjacent dataset/model nodes and resolve donors from those.
+        EDGES.filter((e) => edgeSrcId(e) === nodeId || edgeTgtId(e) === nodeId).forEach((e) => {
+          const otherId = edgeSrcId(e) === nodeId ? edgeTgtId(e) : edgeSrcId(e);
+          const otherNode = NODES.find((n) => n.id === otherId);
+          if (!otherNode) return;
+          if (String(otherNode.type) === "ProcessedData") donorIdsForDatasetNode(otherId).forEach((d) => donorIds.add(d));
+          if (String(otherNode.type) === "Model" || String(otherNode.type) === "FineTunedModel") {
+            donorIdsForModelSplit(otherId, split === "evaluation" ? "evaluation" : "training").forEach((d) => donorIds.add(d));
+          }
+        });
+      });
+      const rows = [...donorIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .sort((a, b) => labelSingleLine(a.label).localeCompare(labelSingleLine(b.label)))
+        .map((n) => ({
+          id: n.id,
+          label: labelSingleLine(n.label),
+          diseaseTag: diseaseTagFromDonor(n),
+        }));
+      return { rows, summary: { donorCount: rows.length } };
+    }
+    case "set_operation": {
+      const operator = String(params.operator || "intersect").toLowerCase();
+      const leftIds = asArray(params.leftIds).map((x) => String(x || "").trim()).filter(Boolean);
+      const rightIds = asArray(params.rightIds).map((x) => String(x || "").trim()).filter(Boolean);
+      const L = new Set(leftIds);
+      const R = new Set(rightIds);
+      let out = [];
+      if (operator === "union") out = [...new Set([...leftIds, ...rightIds])];
+      else if (operator === "diff") out = leftIds.filter((id) => !R.has(id));
+      else out = leftIds.filter((id) => R.has(id)); // intersect default
+      const rows = out.map((id) => {
+        const node = NODES.find((n) => n.id === id);
+        return node ? nodeRow(node) : { id, label: id, type: "Unknown", detail: {} };
+      });
+      return {
+        rows,
+        summary: {
+          operator,
+          leftCount: L.size,
+          rightCount: R.size,
+          resultCount: rows.length,
+        },
+      };
+    }
     default:
       return { rows:[], error:"Unknown intent" };
   }
@@ -906,6 +1097,7 @@ Available intents:
 - shared_donors_three_fms
 - training_donors_by_models
 - training_donor_overlap_between_models
+- donor_overlap_between_models
 - disease_composition_for_model_training
 - donor_modality_availability
 - qc_pipeline_for_model_modality
@@ -919,10 +1111,15 @@ Available intents:
 - upstream_metadata_impact
 - shared_validation_datasets_across_fms
 - disease_composition_bias_three_fms
+- search_nodes
+- get_neighbors
+- extract_donors
+- set_operation
 Workflow:
-1) Pick the best intent and params.
-2) Call queryGraph.
-3) Answer only from tool results.
+1) Prefer atomic graph retrieval intents first (search_nodes/get_neighbors/extract_donors/set_operation).
+2) Use domain-specific intents only when atomic retrieval is clearly insufficient.
+3) Call queryGraph.
+4) Answer only from tool results.
 Answer style requirements:
 - Return a direct final answer, not your search process.
 - Never write phrases like "let me try/search/look up".
@@ -942,6 +1139,7 @@ const INTENT_ENUM = [
   "shared_donors_three_fms",
   "training_donors_by_models",
   "training_donor_overlap_between_models",
+  "donor_overlap_between_models",
   "disease_composition_for_model_training",
   "donor_modality_availability",
   "qc_pipeline_for_model_modality",
@@ -955,6 +1153,10 @@ const INTENT_ENUM = [
   "upstream_metadata_impact",
   "shared_validation_datasets_across_fms",
   "disease_composition_bias_three_fms",
+  "search_nodes",
+  "get_neighbors",
+  "extract_donors",
+  "set_operation",
 ];
 
 const AGENT_TOOLS = [
@@ -1045,22 +1247,75 @@ Rules:
 - If user question is ambiguous, return mode "clarify" with one concise clarify_question.
 - Never include prose outside JSON.
 `;
+const LANGGRAPH_MAX_STEPS = 6;
+const AGENT_LANGGRAPH_PLANNER_SYSTEM = `
+You are the planner node in a LangGraph-style governance agent.
+You must decide the NEXT action only (one step at a time).
+
+Return JSON only with schema:
+{
+  "mode":"tool|answer|clarify",
+  "intent":"optional intent string",
+  "params":{},
+  "answer":"final answer when mode=answer",
+  "clarify_question":"question when mode=clarify",
+  "confidence":0.0
+}
+
+Rules:
+- Allowed intents: ${INTENT_ENUM.join(", ")}
+- Prefer atomic retrieval intents first: search_nodes, get_neighbors, extract_donors, set_operation.
+- Use domain intents only when they directly and fully match the question.
+- If question compares multiple entities (overlap/intersection/shared/simultaneously), do NOT use single-entity intents.
+- Use "tool" when more evidence is needed.
+- Use "answer" only when existing evidence is sufficient.
+- Use "clarify" only if required entity/constraint is missing.
+- Never output non-JSON text.
+`;
+const AGENT_LANGGRAPH_ANSWER_SYSTEM = `
+You are the answer node in a LangGraph-style governance agent.
+Use only provided tool evidence to answer.
+If evidence is insufficient, explicitly say what is missing in the current graph.
+Do not describe internal reasoning steps.
+`;
 const extractModelMentions = (q) => {
-  const mentionRegex = /(genomic fm|single-cell fm|single cell fm|scfm|spatial fm)/g;
+  const mentionRegex = /(genomic fm|single-cell fm|single cell fm|scfm|spatial fm|spatial omics fm|protein fm)/g;
   const out = [];
   let m;
   while ((m = mentionRegex.exec(q)) !== null) {
     const t = m[1];
     if (t === "genomic fm") out.push("model_genomic");
     else if (t === "spatial fm") out.push("model_spatial");
+    else if (t === "spatial omics fm") out.push("model_spatial_omics");
+    else if (t === "protein fm") out.push("model_protein");
     else out.push("model_scfm");
   }
   return out;
 };
+const extractSplitFromQuery = (q = "") => {
+  if (
+    q.includes("evaluation") ||
+    q.includes("eval") ||
+    q.includes("validation") ||
+    q.includes("test set") ||
+    q.includes("testing") ||
+    q.includes("测试集") ||
+    q.includes("验证集")
+  ) return "evaluation";
+  if (q.includes("training") || q.includes("train set") || q.includes("训练集")) return "training";
+  return "training";
+};
+const OVERLAP_TOKENS = ["overlap", "shared", "intersection", "intersect", "交集", "重合", "同时", "共同"];
+const hasOverlapSignal = (q = "") => OVERLAP_TOKENS.some((t) => q.includes(t));
+const hasMultiModelSignal = (q = "") => extractModelMentions(q).length >= 2;
+const isCompositeDonorQuestion = (q = "") =>
+  q.includes("donor") &&
+  (hasOverlapSignal(q) || hasMultiModelSignal(q) || q.includes("vs") || q.includes("和"));
 
 const getForcedToolUses = (userMsg) => {
   const q = normalizeQ(userMsg);
   if (!q) return [];
+  const compositeDonorQ = isCompositeDonorQuestion(q);
 
   if (q.includes("dataset cards") && q.includes("genomic fm") && q.includes("model card")) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "card_links", params: { modelId: "model_genomic" } } }];
@@ -1210,16 +1465,17 @@ const getForcedToolUses = (userMsg) => {
   }
   if (
     q.includes("donor") &&
-    (q.includes("重合") || q.includes("交集") || q.includes("overlap") || q.includes("shared"))
+    hasOverlapSignal(q)
   ) {
     const mentions = extractModelMentions(q);
-    if (mentions.length >= 1) {
+    if (mentions.length >= 2) {
       const a = mentions[0];
-      const b = mentions.length >= 2 ? mentions[1] : mentions[0];
+      const b = mentions[1];
+      const split = extractSplitFromQuery(q);
       return [{
         id: "forced-1",
         name: "queryGraph",
-        input: { intent: "training_donor_overlap_between_models", params: { modelAId: a, modelBId: b } },
+        input: { intent: "donor_overlap_between_models", params: { modelAId: a, modelBId: b, splitA: split, splitB: split } },
       }];
     }
   }
@@ -1232,21 +1488,21 @@ const getForcedToolUses = (userMsg) => {
   ) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "shared_donors_three_fms", params: {} } }];
   }
-  if (q.includes("donor") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))) {
+  if (!compositeDonorQ && q.includes("donor") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))) {
     return [{
       id: "forced-1",
       name: "queryGraph",
       input: { intent: "training_donors_by_models", params: { modelIds: ["model_scfm"] } },
     }];
   }
-  if (q.includes("donor") && q.includes("genomic fm")) {
+  if (!compositeDonorQ && q.includes("donor") && q.includes("genomic fm")) {
     return [{
       id: "forced-1",
       name: "queryGraph",
       input: { intent: "training_donors_by_models", params: { modelIds: ["model_genomic"] } },
     }];
   }
-  if (q.includes("donor") && q.includes("spatial fm")) {
+  if (!compositeDonorQ && q.includes("donor") && q.includes("spatial fm")) {
     return [{
       id: "forced-1",
       name: "queryGraph",
@@ -1278,6 +1534,7 @@ const formatIntentAnswer = (intent, params, result) => {
     !rows.length &&
     intent !== "shared_donors_three_fms" &&
     intent !== "training_donor_overlap_between_models" &&
+    intent !== "donor_overlap_between_models" &&
     intent !== "governance_events_by_period" &&
     intent !== "qc_pipeline_for_model_modality" &&
     intent !== "models_need_reeval_after_donor_qc" &&
@@ -1332,6 +1589,24 @@ const formatIntentAnswer = (intent, params, result) => {
       const same = s.sameModel ? " (same model compared to itself)" : "";
       return [
         `${s.modelALabel} vs ${s.modelBLabel}${same}`,
+        `Split: ${s.splitA || "training"} (A) vs ${s.splitB || "training"} (B)`,
+        `Overlap donors: ${s.overlapCount}`,
+        `${s.modelALabel}: ${s.modelADonorCount} donors`,
+        `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
+        `Overlap ratio: ${pctA}% of model A, ${pctB}% of model B`,
+      ].join("\n");
+    }
+    case "donor_overlap_between_models": {
+      const s = result?.summary || {};
+      if (!s.found && !rows.length) {
+        return `No matching model pair was found for overlap query in current graph.`;
+      }
+      const pctA = ((s.overlapRatioA || 0) * 100).toFixed(1);
+      const pctB = ((s.overlapRatioB || 0) * 100).toFixed(1);
+      const same = s.sameModel ? " (same model compared to itself)" : "";
+      return [
+        `${s.modelALabel} vs ${s.modelBLabel}${same}`,
+        `Split: ${s.splitA || "training"} (A) vs ${s.splitB || "training"} (B)`,
         `Overlap donors: ${s.overlapCount}`,
         `${s.modelALabel}: ${s.modelADonorCount} donors`,
         `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
@@ -1463,6 +1738,18 @@ const formatIntentAnswer = (intent, params, result) => {
         `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}% (T1D=${c.T1D ?? 0}, Control=${c.Control ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0})`,
       ].join("\n");
     }
+    case "search_nodes":
+      return `Found ${rows.length} matching node(s):\n${rows.map((r, i) => `${i + 1}. ${r.label} [${r.type}]`).join("\n")}`;
+    case "get_neighbors":
+      return `Found ${rows.length} neighbor edge(s):\n${rows.slice(0, 50).map((r, i) => `${i + 1}. ${r.fromLabel} -${r.edgeLabel}-> ${r.toLabel}`).join("\n")}`;
+    case "extract_donors": {
+      const s = result?.summary || {};
+      return `Extracted ${s.donorCount ?? rows.length} donor(s):\n${rows.slice(0, 200).map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+    }
+    case "set_operation": {
+      const s = result?.summary || {};
+      return `Set operation (${s.operator || "intersect"}) result: ${s.resultCount ?? rows.length} item(s).\n${rows.slice(0, 200).map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+    }
     default:
       return null;
   }
@@ -1487,6 +1774,44 @@ function AgentView({ p = false }) {
   const stopTimer  = () => { if(timerRef.current){ setElapsed(((Date.now()-timerRef.current)/1000).toFixed(1)); timerRef.current=null; }};
 
   const addTrace = (step) => setLiveTrace(t=>[...t, { ...step, ts: Date.now() }]);
+  const callAnthropic = async ({ system, messages, tools, max_tokens=1000 }) => {
+    const res = await fetch("/api/anthropic/messages", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        model:"claude-sonnet-4-20250514",
+        max_tokens,
+        system,
+        ...(tools ? { tools } : {}),
+        messages,
+      }),
+    });
+    if (!res.ok) throw new Error(`API returned ${res.status}: ${res.statusText}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || "API error");
+    return data;
+  };
+  const summarizeResultForPlanner = (intent, result) => {
+    const rows = Array.isArray(result?.rows) ? result.rows : [];
+    return {
+      intent,
+      rowCount: rows.length,
+      preview: rows.slice(0, 5),
+      summary: result?.summary || null,
+    };
+  };
+  const normalizeToolUse = (intent, params, idx=1) => {
+    const safeIntent = String(intent || "").trim();
+    if (!INTENT_ENUM.includes(safeIntent)) return null;
+    return {
+      id: `graph-${idx}-${Date.now()}`,
+      name: "queryGraph",
+      input: {
+        intent: safeIntent,
+        params: params && typeof params === "object" ? params : {},
+      },
+    };
+  };
 
   const sendMessage = async (text) => {
     const userMsg = (text || input).trim();
@@ -1504,140 +1829,283 @@ function AgentView({ p = false }) {
 
     try {
       setPhase("thinking");
-      addTrace({ kind:"step", icon:"🧠", label:"Step 1 - LLM analysis", detail:"Parsing question and selecting query intent..." });
+      addTrace({ kind:"step", icon:"🧠", label:"LangGraph - route", detail:"Initializing graph state..." });
 
-      const forcedToolUses = getForcedToolUses(userMsg);
-      let toolUses = forcedToolUses;
-      let directAnswer = "";
-      let assistantFirstContent = [];
-      let usedPlanner = false;
-
-      if (forcedToolUses.length > 0) {
-        addTrace({ kind:"intent", icon:"🧭", label:"Rule route", detail:"Using deterministic intent routing for this question." });
-      } else {
-        addTrace({ kind:"step", icon:"🗺️", label:"Step 1.1 - planner", detail:"Generating intent plan with confidence..." });
-        const plannerRes = await fetch("/api/anthropic/messages", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({
-            model:"claude-sonnet-4-20250514",
-            max_tokens:500,
-            system: AGENT_PLANNER_SYSTEM,
-            messages:[{ role:"user", content:userMsg }],
-          })
-        });
-
-        if (!plannerRes.ok) throw new Error(`API returned ${plannerRes.status}: ${plannerRes.statusText}`);
-        const plannerData = await plannerRes.json();
-        if (plannerData.error) throw new Error(plannerData.error.message || "Planner API error");
-
-        const plannerText = (plannerData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-        const plannerJson = extractJsonFromText(plannerText);
-        const plannerConfidence = Number(plannerJson?.confidence ?? 0);
-        const planned = normalizePlannedQueries(plannerJson?.queries);
-
-        if (plannerJson?.mode === "clarify") {
-          addTrace({ kind:"intent", icon:"🧭", label:"Planner: clarify", detail:`confidence=${plannerConfidence.toFixed(2)}` });
-          directAnswer = String(plannerJson?.clarify_question || "Could you clarify which model/dataset you want to query?");
-          toolUses = [];
-        } else if (planned.length && plannerConfidence >= 0.35) {
-          usedPlanner = true;
-          toolUses = planned;
-          addTrace({ kind:"intent", icon:"🧭", label:`Planner route (${plannerJson?.mode || "single"})`, detail:`confidence=${plannerConfidence.toFixed(2)}, queries=${planned.length}` });
-        } else {
-          addTrace({ kind:"info", icon:"↩️", label:"Planner fallback", detail:"Confidence too low or invalid plan. Falling back to tool-calling model." });
-          const res1 = await fetch("/api/anthropic/messages", {
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({
-              model:"claude-sonnet-4-20250514", max_tokens:1000,
-              system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
-              messages: history.map(m=>({role:m.role, content:m.content})),
-            })
-          });
-
-          if (!res1.ok) throw new Error(`API returned ${res1.status}: ${res1.statusText}`);
-          const data1 = await res1.json();
-          if (data1.error) throw new Error(data1.error.message || "API error");
-
-          toolUses = (data1.content||[]).filter(b=>b.type==="tool_use");
-          assistantFirstContent = data1?.content || [];
-          const textParts = (data1.content||[]).filter(b=>b.type==="text");
-          if (toolUses.length === 0) {
-            directAnswer = textParts.map(b=>b.text).join("\n");
-          }
-        }
-      }
-
-      if (toolUses.length === 0) {
-        addTrace({ kind:"info", icon:"💬", label:"Direct answer", detail:"No graph query required" });
-        const answer = directAnswer || "I need one more detail to answer this reliably.";
-        stopTimer();
-        setMessages(m=>[...m, { role:"assistant", content:answer, trace:[] }]);
-        setLoading(false); setPhase(null);
-        return;
-      }
-
-      toolUses.forEach(tu => {
-        addTrace({ kind:"intent", icon:"🎯", label:`Intent: ${tu.input.intent}`, detail:`params: ${JSON.stringify(tu.input.params||{})}` });
+      const LGState = Annotation.Root({
+        question: Annotation({ default: () => "" }),
+        history: Annotation({ default: () => [] }),
+        forceOnly: Annotation({ default: () => false, reducer: (_x, y) => y }),
+        forcedQueue: Annotation({ default: () => [], reducer: (_x, y) => y }),
+        nextToolUse: Annotation({ default: () => null, reducer: (_x, y) => y }),
+        traceQueries: Annotation({ default: () => [], reducer: (x, y) => x.concat(y) }),
+        finalAnswer: Annotation({ default: () => "", reducer: (_x, y) => y }),
+        lastActionSignature: Annotation({ default: () => "", reducer: (_x, y) => y }),
+        noProgressCount: Annotation({ default: () => 0, reducer: (_x, y) => y }),
+        done: Annotation({ default: () => false, reducer: (_x, y) => y }),
+        verified: Annotation({ default: () => false, reducer: (_x, y) => y }),
+        step: Annotation({ default: () => 0, reducer: (_x, y) => y }),
       });
 
-      setPhase("querying");
-      addTrace({ kind:"step", icon:"🔎", label:"Step 2 - graph query", detail:"Executing against provenance graph..." });
+      const routeNode = async (state) => {
+        const forced = getForcedToolUses(state.question);
+        if (forced.length) {
+          addTrace({ kind:"intent", icon:"🧭", label:"LangGraph route", detail:`Forced route with ${forced.length} tool step(s).` });
+        }
+        return { forcedQueue: forced, forceOnly: forced.length > 0 };
+      };
 
-      const toolResults = [];
-      const traceQueries = [];
-      for (const tu of toolUses) {
+      const planNode = async (state) => {
+        if (state.done) return {};
+        if (state.noProgressCount >= 1) {
+          addTrace({ kind:"info", icon:"🛑", label:"LangGraph stop", detail:"Stopping due to repeated no-progress tool calls." });
+          return { done: true };
+        }
+        if (state.step >= LANGGRAPH_MAX_STEPS) {
+          addTrace({ kind:"info", icon:"⏱️", label:"LangGraph planner", detail:"Reached max steps, moving to answer node." });
+          return { done: true };
+        }
+        if (state.forceOnly && (!state.forcedQueue || state.forcedQueue.length === 0) && state.traceQueries.length > 0) {
+          addTrace({ kind:"info", icon:"✅", label:"LangGraph fast-exit", detail:"Forced route satisfied; skipping extra planner rounds." });
+          return { done: true };
+        }
+
+        if (state.forcedQueue?.length) {
+          const [next, ...rest] = state.forcedQueue;
+          return { nextToolUse: next, forcedQueue: rest };
+        }
+
+        const qNorm = normalizeQ(state.question);
+        if (qNorm.includes("donor") && hasOverlapSignal(qNorm) && hasMultiModelSignal(qNorm)) {
+          const alreadyHasOverlapEvidence = state.traceQueries.some(
+            (q) => q.intent === "training_donor_overlap_between_models" || q.intent === "donor_overlap_between_models" || q.intent === "set_operation"
+          );
+          if (!alreadyHasOverlapEvidence) {
+            const mentions = extractModelMentions(qNorm);
+            const split = extractSplitFromQuery(qNorm);
+            return {
+              nextToolUse: normalizeToolUse("donor_overlap_between_models", {
+                modelAId: mentions[0],
+                modelBId: mentions[1],
+                splitA: split,
+                splitB: split,
+              }, state.step + 1),
+            };
+          }
+        }
+
+        addTrace({ kind:"step", icon:"🗺️", label:`LangGraph plan step ${state.step + 1}`, detail:"Selecting next tool action..." });
+        const evidence = state.traceQueries.map((q) => summarizeResultForPlanner(q.intent, q.result));
+        const plannerMsg = {
+          role: "user",
+          content: JSON.stringify({
+            question: state.question,
+            step: state.step + 1,
+            maxSteps: LANGGRAPH_MAX_STEPS,
+            evidence,
+          }),
+        };
+
+        const plannerData = await callAnthropic({
+          system: AGENT_LANGGRAPH_PLANNER_SYSTEM,
+          messages: [plannerMsg],
+          max_tokens: 500,
+        });
+        const plannerText = (plannerData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        const planJson = extractJsonFromText(plannerText) || {};
+        const mode = String(planJson.mode || "").toLowerCase();
+        const confidence = Number(planJson.confidence ?? 0);
+
+        if (mode === "clarify") {
+          addTrace({ kind:"intent", icon:"🧭", label:"LangGraph planner: clarify", detail:`confidence=${confidence.toFixed(2)}` });
+          return { done: true, finalAnswer: String(planJson.clarify_question || "Could you clarify your target model/dataset/donor?") };
+        }
+        if (mode === "answer") {
+          addTrace({ kind:"intent", icon:"🧭", label:"LangGraph planner: answer", detail:`confidence=${confidence.toFixed(2)}` });
+          return { done: true, finalAnswer: String(planJson.answer || "") };
+        }
+
+        const nextTool = normalizeToolUse(planJson.intent, planJson.params, state.step + 1);
+        if (nextTool) {
+          const sig = `${nextTool.input.intent}:${JSON.stringify(nextTool.input.params || {})}`;
+          if (sig === state.lastActionSignature) {
+            addTrace({ kind:"info", icon:"🛑", label:"LangGraph dedup", detail:"Planner proposed the same query again; ending iterative loop." });
+            return { done: true };
+          }
+          addTrace({ kind:"intent", icon:"🎯", label:`Intent: ${nextTool.input.intent}`, detail:`params: ${JSON.stringify(nextTool.input.params||{})}` });
+          return { nextToolUse: nextTool };
+        }
+
+        addTrace({ kind:"info", icon:"↩️", label:"LangGraph planner fallback", detail:"Planner output invalid; using tool-call fallback." });
+        const fallbackData = await callAnthropic({
+          system: GRAPH_CONTEXT,
+          tools: AGENT_TOOLS,
+          messages: state.history.map((m) => ({ role: m.role, content: m.content })),
+          max_tokens: 900,
+        });
+        const fallbackTool = (fallbackData.content || []).find((b) => b.type === "tool_use");
+        if (fallbackTool?.input?.intent) {
+          const fallbackNext = normalizeToolUse(fallbackTool.input.intent, fallbackTool.input.params, state.step + 1);
+          if (fallbackNext) {
+            const sig = `${fallbackNext.input.intent}:${JSON.stringify(fallbackNext.input.params || {})}`;
+            if (sig === state.lastActionSignature) return { done: true };
+            return { nextToolUse: fallbackNext };
+          }
+        }
+        const fallbackText = (fallbackData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        return { done: true, finalAnswer: fallbackText || "I could not determine a reliable next query from the current question." };
+      };
+
+      const actNode = async (state) => {
+        const tu = state.nextToolUse;
+        if (!tu?.input?.intent) return { step: state.step + 1 };
+        setPhase("querying");
+        addTrace({ kind:"step", icon:"🔎", label:"LangGraph - act", detail:`Executing ${tu.input.intent}` });
         const { intent, params } = tu.input;
         const result = queryGraph(intent, params || {});
         const nRows = result.rows?.length ?? 0;
+        const actionSignature = `${intent}:${JSON.stringify(params || {})}`;
+        const repeatedSameAction = actionSignature === state.lastActionSignature;
+        const noProgressCount = repeatedSameAction && nRows === 0 ? (state.noProgressCount || 0) + 1 : 0;
         addTrace({ kind:"result", icon: nRows>0?"OK":"INFO", label:`${intent}`, detail:`${nRows} row${nRows!==1?"s":""} returned`, rows: result.rows?.slice(0,3) });
-        traceQueries.push({ intent, params, result });
-        toolResults.push({ type:"tool_result", tool_use_id:tu.id, content: JSON.stringify(result) });
-      }
-
-      if (traceQueries.length === 1) {
-        const only = traceQueries[0];
-        const templated = formatIntentAnswer(only.intent, only.params, only.result);
-        if (templated) {
-          stopTimer();
-          addTrace({ kind:"done", icon:"✅", label:"Done", detail:`Answer ready (templated from graph results${usedPlanner ? ", planner-routed" : ""})` });
-          setMessages(m=>[...m, { role:"assistant", content:templated, trace:traceQueries }]);
-          setLoading(false);
-          setPhase(null);
-          return;
+        if (repeatedSameAction && nRows === 0) {
+          addTrace({ kind:"info", icon:"🛑", label:"LangGraph no-progress", detail:"Repeated empty result for the same query; stopping to avoid loop." });
         }
-      }
+        const forceQueueEmptyAfterThis = !state.forcedQueue || state.forcedQueue.length === 0;
+        const shouldFinishForced = state.forceOnly && forceQueueEmptyAfterThis && nRows > 0;
+        return {
+          traceQueries: [{ intent, params, result }],
+          nextToolUse: null,
+          lastActionSignature: actionSignature,
+          noProgressCount,
+          done: shouldFinishForced ? true : state.done,
+          verified: false,
+          step: state.step + 1,
+        };
+      };
 
-      setPhase("answering");
-      addTrace({ kind:"step", icon:"✍️", label:"Step 3 - generating answer", detail:"Claude interpreting query results..." });
+      const verifyCoverage = (question, traceQueries) => {
+        const q = normalizeQ(question);
+        const hasOverlapNeed = q.includes("donor") && hasOverlapSignal(q) && hasMultiModelSignal(q);
+        const last = traceQueries[traceQueries.length - 1];
+        if (!last) return { ok: false, reason: "No query result yet." };
+        const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
 
-      const assistantToolOnly = toolUses.map(tu => ({ type:"tool_use", id:tu.id, name:tu.name, input:tu.input }));
-      const res2 = await fetch("/api/anthropic/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:1000,
-          system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
-          messages:[
-            ...history.map(m=>({role:m.role,content:m.content})),
-            { role:"assistant", content:assistantToolOnly.length ? assistantToolOnly : assistantFirstContent },
-            { role:"user",      content:toolResults },
-            { role:"user",      content:"Provide the final user-facing answer only. Do not describe your search steps. If no rows were returned, explicitly say no matching records were found in the current graph." },
-          ],
-        })
+        if (hasOverlapNeed) {
+          const overlapHit = traceQueries.some((x) =>
+            x.intent === "training_donor_overlap_between_models" || x.intent === "donor_overlap_between_models"
+          );
+          if (!overlapHit) {
+            return { ok: false, reason: "Question asks overlap across models, but overlap query has not been executed yet." };
+          }
+          return { ok: true, reason: "Overlap query evidence is present." };
+        }
+
+        if (q.includes("provenance chain") || q.includes("lineage chain") || q.includes("溯源链")) {
+          const chainHit = traceQueries.some((x) => x.intent === "provenance_chain" && (x.result?.rows?.length || 0) > 0);
+          return chainHit
+            ? { ok: true, reason: "Provenance chain evidence found." }
+            : { ok: false, reason: "Provenance chain question requires non-empty provenance_chain result." };
+        }
+
+        if (q.includes("training set") && q.includes("donor")) {
+          const donorHit = traceQueries.some((x) => x.intent === "training_donors_by_models" && (x.result?.rows?.length || 0) > 0);
+          return donorHit
+            ? { ok: true, reason: "Training donor evidence found." }
+            : { ok: false, reason: "Training-set donor question requires donor extraction evidence." };
+        }
+
+        return rows.length > 0
+          ? { ok: true, reason: "Latest query returned non-empty evidence." }
+          : { ok: false, reason: "Latest query returned empty rows." };
+      };
+
+      const verifyNode = async (state) => {
+        if (state.done) return { verified: true };
+        const verdict = verifyCoverage(state.question, state.traceQueries || []);
+        addTrace({
+          kind: verdict.ok ? "done" : "info",
+          icon: verdict.ok ? "✅" : "🧪",
+          label: "LangGraph - verify",
+          detail: verdict.reason,
+        });
+        if (verdict.ok) return { done: true, verified: true };
+        return { verified: false };
+      };
+
+      const answerNode = async (state) => {
+        setPhase("answering");
+        if (state.finalAnswer) return { finalAnswer: state.finalAnswer };
+        if (state.traceQueries.length === 1) {
+          const only = state.traceQueries[0];
+          const templated = formatIntentAnswer(only.intent, only.params, only.result);
+          if (templated) return { finalAnswer: templated };
+        }
+        const evidence = state.traceQueries.map((q) => ({
+          intent: q.intent,
+          params: q.params,
+          rowCount: q.result?.rows?.length ?? 0,
+          rows: (q.result?.rows || []).slice(0, 12),
+          summary: q.result?.summary || null,
+        }));
+        const answerData = await callAnthropic({
+          system: AGENT_LANGGRAPH_ANSWER_SYSTEM,
+          messages: [{
+            role: "user",
+            content: JSON.stringify({
+              question: state.question,
+              evidence,
+              instruction: "Answer with the available evidence only.",
+            }),
+          }],
+          max_tokens: 1000,
+        });
+        const answerText = (answerData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        return { finalAnswer: answerText || "No answer generated." };
+      };
+
+      const workflow = new StateGraph(LGState)
+        .addNode("route", routeNode)
+        .addNode("plan", planNode)
+        .addNode("act", actNode)
+        .addNode("verify", verifyNode)
+        .addNode("answer", answerNode)
+        .addEdge(START, "route")
+        .addEdge("route", "plan")
+        .addConditionalEdges("plan", (state) => {
+          if (state.done) return "answer";
+          if (state.nextToolUse) return "act";
+          return "answer";
+        }, { act: "act", answer: "answer" })
+        .addConditionalEdges("act", (state) => {
+          if (state.done || state.noProgressCount >= 1 || state.step >= LANGGRAPH_MAX_STEPS) return "answer";
+          return "verify";
+        }, { verify: "verify", answer: "answer" })
+        .addConditionalEdges("verify", (state) => {
+          if (state.done || state.verified || state.step >= LANGGRAPH_MAX_STEPS) return "answer";
+          return "plan";
+        }, { plan: "plan", answer: "answer" })
+        .addEdge("answer", END);
+
+      const app = workflow.compile();
+      const finalState = await app.invoke({
+        question: userMsg,
+        history,
+        forceOnly: false,
+        forcedQueue: [],
+        nextToolUse: null,
+        traceQueries: [],
+        finalAnswer: "",
+        lastActionSignature: "",
+        noProgressCount: 0,
+        done: false,
+        verified: false,
+        step: 0,
       });
 
-      if (!res2.ok) throw new Error(`API returned ${res2.status}: ${res2.statusText}`);
-
-      const data2 = await res2.json();
-      if (data2.error) throw new Error(data2.error.message || "API error");
-
-      const answer = (data2.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
-
+      const answer = String(finalState.finalAnswer || "").trim() || "(no response)";
       stopTimer();
-      addTrace({ kind:"done", icon:"✅", label:"Done", detail:`Answer ready` });
-      setMessages(m=>[...m, { role:"assistant", content:answer||"(no response)", trace:traceQueries }]);
+      addTrace({ kind:"done", icon:"✅", label:"Done", detail:`LangGraph run completed in ${finalState.step ?? 0} step(s)` });
+      setMessages(m=>[...m, { role:"assistant", content:answer, trace:finalState.traceQueries || [] }]);
     } catch(err) {
       stopTimer();
       addTrace({ kind:"error", icon:"❌", label:"Error", detail:err.message });
@@ -1844,7 +2312,7 @@ function AgentView({ p = false }) {
 
         <div style={{ padding:"10px 12px", borderTop:"1px solid #e2e8f0", flexShrink:0 }}>
           <div style={{ fontSize:p?11:9.5, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>Available intents</div>
-          {["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models"].map(intent=>(
+          {INTENT_ENUM.map(intent=>(
             <div key={intent} style={{ fontSize:p?11:9, fontFamily:"monospace", color:"#7c3aed", padding:"2px 0", lineHeight:1.7 }}>{intent}</div>
           ))}
         </div>
