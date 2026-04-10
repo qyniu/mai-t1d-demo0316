@@ -714,10 +714,31 @@ Answer style requirements:
 - Keep answers concise and precise for AI researchers.
 `;
 
+const INTENT_ENUM = [
+  "datasets_for_model",
+  "models_for_dataset",
+  "compliance_status",
+  "pipeline_for_dataset",
+  "downstream_tasks",
+  "provenance_chain",
+  "card_links",
+  "node_detail",
+  "shared_donors_three_fms",
+  "training_donors_by_models",
+  "training_donor_overlap_between_models",
+  "disease_composition_for_model_training",
+  "cross_model_donor_leakage",
+  "cross_modality_embedding_leakage",
+  "train_eval_distribution_drift",
+  "upstream_metadata_impact",
+  "shared_validation_datasets_across_fms",
+  "disease_composition_bias_three_fms",
+];
+
 const AGENT_TOOLS = [
   { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models","disease_composition_for_model_training","cross_model_donor_leakage","cross_modality_embedding_leakage","train_eval_distribution_drift","upstream_metadata_impact","shared_validation_datasets_across_fms","disease_composition_bias_three_fms"], description:"The query pattern to execute" },
+      intent:{ type:"string", enum:INTENT_ENUM, description:"The query pattern to execute" },
       params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
     }, required:["intent","params"] }
   }
@@ -734,6 +755,54 @@ const SUGGESTIONS = [
 ];
 
 const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const extractJsonFromText = (text = "") => {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {}
+  const fenced = raw.match(/```json\s*([\s\S]*?)```/i) || raw.match(/```\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {}
+  }
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first >= 0 && last > first) {
+    try {
+      return JSON.parse(raw.slice(first, last + 1));
+    } catch {}
+  }
+  return null;
+};
+const normalizePlannedQueries = (queries) => {
+  if (!Array.isArray(queries)) return [];
+  return queries
+    .slice(0, 3)
+    .map((q, idx) => {
+      const intent = String(q?.intent || "").trim();
+      const params = q?.params && typeof q.params === "object" ? q.params : {};
+      if (!INTENT_ENUM.includes(intent)) return null;
+      return { id: `plan-${idx + 1}`, name: "queryGraph", input: { intent, params } };
+    })
+    .filter(Boolean);
+};
+const AGENT_PLANNER_SYSTEM = `
+You are a routing/planning module for MAI-T1D governance queries.
+Return JSON only with this schema:
+{
+  "mode":"single|multi|clarify",
+  "confidence": 0.0,
+  "queries":[{"intent":"...", "params":{}}],
+  "clarify_question":"..."
+}
+Rules:
+- Use only intents from this list: ${INTENT_ENUM.join(", ")}.
+- Choose "single" if one query is enough; "multi" for at most 3 sequential queries.
+- If user question is ambiguous, return mode "clarify" with one concise clarify_question.
+- Never include prose outside JSON.
+`;
 const extractModelMentions = (q) => {
   const mentionRegex = /(genomic fm|single-cell fm|single cell fm|scfm|spatial fm)/g;
   const out = [];
@@ -1109,34 +1178,70 @@ function AgentView({ p = false }) {
 
       const forcedToolUses = getForcedToolUses(userMsg);
       let toolUses = forcedToolUses;
-      let textParts = [];
-      let data1 = null;
+      let directAnswer = "";
+      let assistantFirstContent = [];
+      let usedPlanner = false;
 
       if (forcedToolUses.length > 0) {
         addTrace({ kind:"intent", icon:"🧭", label:"Rule route", detail:"Using deterministic intent routing for this question." });
       } else {
-        const res1 = await fetch("/api/anthropic/messages", {
+        addTrace({ kind:"step", icon:"🗺️", label:"Step 1.1 - planner", detail:"Generating intent plan with confidence..." });
+        const plannerRes = await fetch("/api/anthropic/messages", {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({
-            model:"claude-sonnet-4-20250514", max_tokens:1000,
-            system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
-            messages: history.map(m=>({role:m.role, content:m.content})),
+            model:"claude-sonnet-4-20250514",
+            max_tokens:500,
+            system: AGENT_PLANNER_SYSTEM,
+            messages:[{ role:"user", content:userMsg }],
           })
         });
 
-        if (!res1.ok) throw new Error(`API returned ${res1.status}: ${res1.statusText}`);
+        if (!plannerRes.ok) throw new Error(`API returned ${plannerRes.status}: ${plannerRes.statusText}`);
+        const plannerData = await plannerRes.json();
+        if (plannerData.error) throw new Error(plannerData.error.message || "Planner API error");
 
-        data1 = await res1.json();
-        if (data1.error) throw new Error(data1.error.message || "API error");
+        const plannerText = (plannerData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+        const plannerJson = extractJsonFromText(plannerText);
+        const plannerConfidence = Number(plannerJson?.confidence ?? 0);
+        const planned = normalizePlannedQueries(plannerJson?.queries);
 
-        toolUses = (data1.content||[]).filter(b=>b.type==="tool_use");
-        textParts = (data1.content||[]).filter(b=>b.type==="text");
+        if (plannerJson?.mode === "clarify") {
+          addTrace({ kind:"intent", icon:"🧭", label:"Planner: clarify", detail:`confidence=${plannerConfidence.toFixed(2)}` });
+          directAnswer = String(plannerJson?.clarify_question || "Could you clarify which model/dataset you want to query?");
+          toolUses = [];
+        } else if (planned.length && plannerConfidence >= 0.35) {
+          usedPlanner = true;
+          toolUses = planned;
+          addTrace({ kind:"intent", icon:"🧭", label:`Planner route (${plannerJson?.mode || "single"})`, detail:`confidence=${plannerConfidence.toFixed(2)}, queries=${planned.length}` });
+        } else {
+          addTrace({ kind:"info", icon:"↩️", label:"Planner fallback", detail:"Confidence too low or invalid plan. Falling back to tool-calling model." });
+          const res1 = await fetch("/api/anthropic/messages", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({
+              model:"claude-sonnet-4-20250514", max_tokens:1000,
+              system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
+              messages: history.map(m=>({role:m.role, content:m.content})),
+            })
+          });
+
+          if (!res1.ok) throw new Error(`API returned ${res1.status}: ${res1.statusText}`);
+          const data1 = await res1.json();
+          if (data1.error) throw new Error(data1.error.message || "API error");
+
+          toolUses = (data1.content||[]).filter(b=>b.type==="tool_use");
+          assistantFirstContent = data1?.content || [];
+          const textParts = (data1.content||[]).filter(b=>b.type==="text");
+          if (toolUses.length === 0) {
+            directAnswer = textParts.map(b=>b.text).join("\n");
+          }
+        }
       }
 
       if (toolUses.length === 0) {
         addTrace({ kind:"info", icon:"💬", label:"Direct answer", detail:"No graph query required" });
-        const answer = textParts.map(b=>b.text).join("\n");
+        const answer = directAnswer || "I need one more detail to answer this reliably.";
         stopTimer();
         setMessages(m=>[...m, { role:"assistant", content:answer, trace:[] }]);
         setLoading(false); setPhase(null);
@@ -1166,7 +1271,7 @@ function AgentView({ p = false }) {
         const templated = formatIntentAnswer(only.intent, only.params, only.result);
         if (templated) {
           stopTimer();
-          addTrace({ kind:"done", icon:"✅", label:"Done", detail:"Answer ready (templated from graph results)" });
+          addTrace({ kind:"done", icon:"✅", label:"Done", detail:`Answer ready (templated from graph results${usedPlanner ? ", planner-routed" : ""})` });
           setMessages(m=>[...m, { role:"assistant", content:templated, trace:traceQueries }]);
           setLoading(false);
           setPhase(null);
@@ -1186,7 +1291,7 @@ function AgentView({ p = false }) {
           system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
           messages:[
             ...history.map(m=>({role:m.role,content:m.content})),
-            { role:"assistant", content:assistantToolOnly.length ? assistantToolOnly : (data1?.content || []) },
+            { role:"assistant", content:assistantToolOnly.length ? assistantToolOnly : assistantFirstContent },
             { role:"user",      content:toolResults },
             { role:"user",      content:"Provide the final user-facing answer only. Do not describe your search steps. If no rows were returned, explicitly say no matching records were found in the current graph." },
           ],
