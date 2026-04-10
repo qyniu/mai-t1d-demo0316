@@ -511,7 +511,7 @@ function queryGraph(intent, params) {
       };
     }
     case "upstream_metadata_impact": {
-      const donorCode = String(params.donorCode || params.donorId || "HPAP-002").toUpperCase();
+      const donorCode = normalizeDonorCode(params.donorCode || params.donorId || "HPAP-002") || "HPAP-002";
       const oldStage = params.fromStage || "AAb+";
       const newStage = params.toStage || "T1D onset";
       const donorNode = donorCodeToNode.get(donorCode);
@@ -755,6 +755,25 @@ const SUGGESTIONS = [
 ];
 
 const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const normalizeDonorCode = (raw = "") => {
+  const text = String(raw || "").trim().toUpperCase();
+  if (!text) return null;
+  const m = text.match(/HPAP[-_\s]?(\d{1,3})/);
+  if (!m) return null;
+  return `HPAP-${m[1].padStart(3, "0")}`;
+};
+const extractDonorCodeFromQuery = (q = "") => {
+  const raw = String(q || "");
+  const patterns = [
+    /HPAP[-_\s]?(\d{1,3})/i,
+    /DONOR[-_\s]?HPAP[-_\s]?(\d{1,3})/i,
+  ];
+  for (const p of patterns) {
+    const m = raw.match(p);
+    if (m?.[1]) return `HPAP-${String(m[1]).padStart(3, "0")}`;
+  }
+  return null;
+};
 const extractJsonFromText = (text = "") => {
   const raw = String(text || "").trim();
   if (!raw) return null;
@@ -913,11 +932,11 @@ const getForcedToolUses = (userMsg) => {
     (q.includes("metadata") || q.includes("reclassify") || q.includes("reclassification") || q.includes("上游")) &&
     (q.includes("impact") || q.includes("影响"))
   ) {
-    const donorMatch = q.match(/hpap-\d{3}/);
+    const donorCode = extractDonorCodeFromQuery(userMsg) || extractDonorCodeFromQuery(q);
     return [{
       id: "forced-1",
       name: "queryGraph",
-      input: { intent: "upstream_metadata_impact", params: { donorCode: donorMatch ? donorMatch[0].toUpperCase() : "HPAP-002" } },
+      input: { intent: "upstream_metadata_impact", params: { donorCode: donorCode || "HPAP-002" } },
     }];
   }
   if (
