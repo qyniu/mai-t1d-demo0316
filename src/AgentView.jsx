@@ -254,6 +254,33 @@ function queryGraph(intent, params) {
       });
       return { rows };
     }
+    case "training_donor_overlap_between_models": {
+      const a = params.modelAId || "model_genomic";
+      const b = params.modelBId || "model_scfm";
+      const aNode = NODES.find((n) => n.id === a);
+      const bNode = NODES.find((n) => n.id === b);
+      const aSet = donorIdsForModelTraining(a);
+      const bSet = donorIdsForModelTraining(b);
+      const overlap = [...aSet].filter((id) => bSet.has(id)).sort();
+      return {
+        rows: overlap.map((id) => ({
+          id,
+          label: labelSingleLine(NODES.find((n) => n.id === id)?.label || id),
+        })),
+        summary: {
+          modelAId: a,
+          modelBId: b,
+          modelALabel: labelSingleLine(aNode?.label || a),
+          modelBLabel: labelSingleLine(bNode?.label || b),
+          modelADonorCount: aSet.size,
+          modelBDonorCount: bSet.size,
+          overlapCount: overlap.length,
+          overlapRatioA: aSet.size ? overlap.length / aSet.size : 0,
+          overlapRatioB: bSet.size ? overlap.length / bSet.size : 0,
+          sameModel: a === b,
+        },
+      };
+    }
     default:
       return { rows:[], error:"Unknown intent" };
   }
@@ -282,6 +309,7 @@ Available intents:
 - node_detail
 - shared_donors_three_fms
 - training_donors_by_models
+- training_donor_overlap_between_models
 Workflow:
 1) Pick the best intent and params.
 2) Call queryGraph.
@@ -296,7 +324,7 @@ Answer style requirements:
 const AGENT_TOOLS = [
   { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models"], description:"The query pattern to execute" },
+      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models"], description:"The query pattern to execute" },
       params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
     }, required:["intent","params"] }
   }
@@ -313,6 +341,18 @@ const SUGGESTIONS = [
 ];
 
 const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const extractModelMentions = (q) => {
+  const mentionRegex = /(genomic fm|single-cell fm|single cell fm|scfm|spatial fm)/g;
+  const out = [];
+  let m;
+  while ((m = mentionRegex.exec(q)) !== null) {
+    const t = m[1];
+    if (t === "genomic fm") out.push("model_genomic");
+    else if (t === "spatial fm") out.push("model_spatial");
+    else out.push("model_scfm");
+  }
+  return out;
+};
 
 const getForcedToolUses = (userMsg) => {
   const q = normalizeQ(userMsg);
@@ -332,6 +372,21 @@ const getForcedToolUses = (userMsg) => {
   }
   if (q.includes("who ran the wgs pipeline")) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "node_detail", params: { query: "WGS" } } }];
+  }
+  if (
+    q.includes("donor") &&
+    (q.includes("重合") || q.includes("交集") || q.includes("overlap") || q.includes("shared"))
+  ) {
+    const mentions = extractModelMentions(q);
+    if (mentions.length >= 1) {
+      const a = mentions[0];
+      const b = mentions.length >= 2 ? mentions[1] : mentions[0];
+      return [{
+        id: "forced-1",
+        name: "queryGraph",
+        input: { intent: "training_donor_overlap_between_models", params: { modelAId: a, modelBId: b } },
+      }];
+    }
   }
   if (
     q.includes("donor") &&
@@ -384,7 +439,7 @@ const getForcedToolUses = (userMsg) => {
 
 const formatIntentAnswer = (intent, params, result) => {
   const rows = result?.rows || [];
-  if (!rows.length && intent !== "shared_donors_three_fms") {
+  if (!rows.length && intent !== "shared_donors_three_fms" && intent !== "training_donor_overlap_between_models") {
     return `No matching records were found in the current graph for ${intent.replace(/_/g, " ")}.`;
   }
 
@@ -425,6 +480,19 @@ const formatIntentAnswer = (intent, params, result) => {
           return `${r.modelLabel} (${r.donorCount} donors):\n${donorText || "none"}`;
         })
         .join("\n\n");
+    }
+    case "training_donor_overlap_between_models": {
+      const s = result?.summary || {};
+      const pctA = ((s.overlapRatioA || 0) * 100).toFixed(1);
+      const pctB = ((s.overlapRatioB || 0) * 100).toFixed(1);
+      const same = s.sameModel ? " (same model compared to itself)" : "";
+      return [
+        `${s.modelALabel} vs ${s.modelBLabel}${same}`,
+        `Overlap donors: ${s.overlapCount}`,
+        `${s.modelALabel}: ${s.modelADonorCount} donors`,
+        `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
+        `Overlap ratio: ${pctA}% of model A, ${pctB}% of model B`,
+      ].join("\n");
     }
     default:
       return null;
@@ -771,7 +839,7 @@ function AgentView({ p = false }) {
 
         <div style={{ padding:"10px 12px", borderTop:"1px solid #e2e8f0", flexShrink:0 }}>
           <div style={{ fontSize:p?11:9.5, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>Available intents</div>
-          {["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","shared_donors_three_fms","training_donors_by_models"].map(intent=>(
+          {["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models"].map(intent=>(
             <div key={intent} style={{ fontSize:p?11:9, fontFamily:"monospace", color:"#7c3aed", padding:"2px 0", lineHeight:1.7 }}>{intent}</div>
           ))}
         </div>
