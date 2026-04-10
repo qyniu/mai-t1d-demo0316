@@ -367,6 +367,36 @@ function queryGraph(intent, params) {
         },
       };
     }
+    case "disease_composition_for_model_training": {
+      const modelId = params.modelId || "model_scfm";
+      const modelNode = NODES.find((n) => n.id === modelId);
+      const donors = [...donorIdsForModelTraining(modelId)];
+      const counts = { T1D: 0, "AAb+": 0, T2D: 0, Control: 0, Unknown: 0 };
+      const rows = donors
+        .map((id) => {
+          const node = NODES.find((n) => n.id === id);
+          const diseaseTag = diseaseTagFromDonor(node);
+          counts[diseaseTag] += 1;
+          return {
+            id,
+            label: labelSingleLine(node?.label || id),
+            diseaseTag,
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      return {
+        rows,
+        summary: {
+          modelId,
+          modelLabel: labelSingleLine(modelNode?.label || modelId),
+          donorCount: donors.length,
+          composition: counts,
+          t1dRatio: ratio(counts.T1D, donors.length),
+          controlRatio: ratio(counts.Control, donors.length),
+        },
+      };
+    }
     case "cross_model_donor_leakage": {
       const genomicId = params.genomicModelId || "model_genomic";
       const scfmId = params.scfmModelId || "model_scfm";
@@ -666,6 +696,7 @@ Available intents:
 - shared_donors_three_fms
 - training_donors_by_models
 - training_donor_overlap_between_models
+- disease_composition_for_model_training
 - cross_model_donor_leakage
 - cross_modality_embedding_leakage
 - train_eval_distribution_drift
@@ -686,7 +717,7 @@ Answer style requirements:
 const AGENT_TOOLS = [
   { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models","cross_model_donor_leakage","cross_modality_embedding_leakage","train_eval_distribution_drift","upstream_metadata_impact","shared_validation_datasets_across_fms","disease_composition_bias_three_fms"], description:"The query pattern to execute" },
+      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models","training_donor_overlap_between_models","disease_composition_for_model_training","cross_model_donor_leakage","cross_modality_embedding_leakage","train_eval_distribution_drift","upstream_metadata_impact","shared_validation_datasets_across_fms","disease_composition_bias_three_fms"], description:"The query pattern to execute" },
       params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
     }, required:["intent","params"] }
   }
@@ -734,6 +765,42 @@ const getForcedToolUses = (userMsg) => {
   }
   if (q.includes("who ran the wgs pipeline")) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "node_detail", params: { query: "WGS" } } }];
+  }
+  if (
+    q.includes("donor") &&
+    q.includes("t1d") &&
+    (q.includes("比例") || q.includes("ratio") || q.includes("占比")) &&
+    (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))
+  ) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "disease_composition_for_model_training", params: { modelId: "model_scfm" } },
+    }];
+  }
+  if (
+    q.includes("donor") &&
+    q.includes("t1d") &&
+    (q.includes("比例") || q.includes("ratio") || q.includes("占比")) &&
+    q.includes("genomic fm")
+  ) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "disease_composition_for_model_training", params: { modelId: "model_genomic" } },
+    }];
+  }
+  if (
+    q.includes("donor") &&
+    q.includes("t1d") &&
+    (q.includes("比例") || q.includes("ratio") || q.includes("占比")) &&
+    q.includes("spatial fm")
+  ) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "disease_composition_for_model_training", params: { modelId: "model_spatial" } },
+    }];
   }
   if (
     q.includes("哪些donor") &&
@@ -917,6 +984,15 @@ const formatIntentAnswer = (intent, params, result) => {
         `${s.modelALabel}: ${s.modelADonorCount} donors`,
         `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
         `Overlap ratio: ${pctA}% of model A, ${pctB}% of model B`,
+      ].join("\n");
+    }
+    case "disease_composition_for_model_training": {
+      const s = result?.summary || {};
+      const c = s.composition || {};
+      return [
+        `${s.modelLabel} training donors: ${s.donorCount ?? rows.length}`,
+        `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}%`,
+        `Counts: T1D=${c.T1D ?? 0}, Control=${c.Control ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0}`,
       ].join("\n");
     }
     case "cross_model_donor_leakage": {
