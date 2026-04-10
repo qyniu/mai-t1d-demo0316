@@ -1011,6 +1011,46 @@ function queryGraph(intent, params) {
     if (byLabelExact) return byLabelExact;
     return pool.find(n => labelSingleLine(n.label).toLowerCase().includes(q)) || null;
   };
+  const donorIdsForModelTraining = (modelId) => {
+    if (!modelId) return new Set();
+    const donorNodes = NODES.filter((n) => n.id.startsWith("donor_hpap_"));
+    const donorNodeIds = new Set(donorNodes.map((n) => n.id));
+    const donorCodeToNodeId = new Map(
+      donorNodes.map((n) => [String(labelSingleLine(n.label)).toUpperCase(), n.id])
+    );
+
+    const trainingDatasets = EDGES
+      .filter((e) => e.label === "TRAINED_ON" && edgeTgtId(e) === modelId)
+      .map((e) => edgeSrcId(e));
+    const sampleIds = new Set();
+    trainingDatasets.forEach((dsId) => {
+      EDGES
+        .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === dsId)
+        .forEach((e) => sampleIds.add(edgeTgtId(e)));
+    });
+    const donorIds = new Set();
+    sampleIds.forEach((sampleId) => {
+      let foundDirect = false;
+      EDGES
+        .filter((e) => e.label === "HAD_MEMBER" && edgeTgtId(e) === sampleId)
+        .forEach((e) => {
+          const src = edgeSrcId(e);
+          if (donorNodeIds.has(src)) {
+            donorIds.add(src);
+            foundDirect = true;
+          }
+        });
+
+      // Fallback: infer donor from sample metadata if direct donor->sample edge is missing.
+      if (!foundDirect) {
+        const sampleNode = NODES.find((n) => n.id === sampleId);
+        const donorCode = String(sampleNode?.detail?.Donor || "").toUpperCase();
+        const donorNodeId = donorCodeToNodeId.get(donorCode);
+        if (donorNodeId) donorIds.add(donorNodeId);
+      }
+    });
+    return donorIds;
+  };
 
   switch (intent) {
     case "datasets_for_model": {
@@ -1151,9 +1191,59 @@ function queryGraph(intent, params) {
       const node = resolveNode(params.nodeId) || resolveNode(params.query);
       return { rows: node ? [{ id:node.id, label:labelSingleLine(node.label), type:node.type, detail:node.detail }] : [] };
     }
+    case "shared_donors_three_fms": {
+      const genomicId = params.genomicModelId || "model_genomic";
+      const scfmId = params.scfmModelId || "model_scfm";
+      const spatialId = params.spatialModelId || "model_spatial";
+
+      const genomic = donorIdsForModelTraining(genomicId);
+      const scfm = donorIdsForModelTraining(scfmId);
+      const spatial = donorIdsForModelTraining(spatialId);
+
+      const overlap = [...genomic].filter((d) => scfm.has(d) && spatial.has(d)).sort();
+      return {
+        rows: overlap.map((id) => {
+          const node = NODES.find((n) => n.id === id);
+          return { id, label: labelSingleLine(node?.label || id), type: node?.type || "RawData", detail: node?.detail || {} };
+        }),
+        summary: {
+          overlap_count: overlap.length,
+          genomic_training_donors: genomic.size,
+          scfm_training_donors: scfm.size,
+          spatial_training_donors: spatial.size,
+        },
+      };
+    }
+    case "training_donors_by_models": {
+      const modelIds = Array.isArray(params.modelIds) && params.modelIds.length
+        ? params.modelIds
+        : ["model_genomic", "model_scfm", "model_spatial"];
+
+      const rows = modelIds.map((modelId) => {
+        const modelNode = NODES.find((n) => n.id === modelId);
+        const donors = [...donorIdsForModelTraining(modelId)]
+          .map((id) => labelSingleLine(NODES.find((n) => n.id === id)?.label || id))
+          .sort();
+        return {
+          modelId,
+          modelLabel: labelSingleLine(modelNode?.label || modelId),
+          donorCount: donors.length,
+          donors,
+        };
+      });
+      return { rows };
+    }
     default:
       return { rows:[], error:"Unknown intent" };
   }
+}
+
+if (typeof window !== "undefined") {
+  window.__KG_DEBUG__ = {
+    queryGraph,
+    getNodes: () => NODES,
+    getEdges: () => EDGES,
+  };
 }
 
 //  AGENT VIEW 
@@ -1169,6 +1259,8 @@ Available intents:
 - provenance_chain
 - card_links
 - node_detail
+- shared_donors_three_fms
+- training_donors_by_models
 Workflow:
 1) Pick the best intent and params.
 2) Call queryGraph.
@@ -1183,7 +1275,7 @@ Answer style requirements:
 const AGENT_TOOLS = [
   { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail"], description:"The query pattern to execute" },
+      intent:{ type:"string", enum:["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","node_detail","shared_donors_three_fms","training_donors_by_models"], description:"The query pattern to execute" },
       params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
     }, required:["intent","params"] }
   }
@@ -1198,6 +1290,104 @@ const SUGGESTIONS = [
   "Who ran the WGS pipeline?",
   "Which Dataset Cards does the Genomic FM Model Card link to?",
 ];
+
+const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
+const getForcedToolUses = (userMsg) => {
+  const q = normalizeQ(userMsg);
+  if (!q) return [];
+
+  if (q.includes("dataset cards") && q.includes("genomic fm") && q.includes("model card")) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "card_links", params: { modelId: "model_genomic" } } }];
+  }
+  if (q.includes("which models used") && (q.includes("scrna") || q.includes("sc rna") || q.includes("scRNA".toLowerCase()))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_for_dataset", params: { datasetType: "scRNA-seq" } } }];
+  }
+  if (q.includes("what datasets trained") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "datasets_for_model", params: { modelId: "model_scfm" } } }];
+  }
+  if (q.includes("compliance hold") || q.includes("on compliance hold")) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "compliance_status", params: {} } }];
+  }
+  if (q.includes("who ran the wgs pipeline")) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "node_detail", params: { query: "WGS" } } }];
+  }
+  if (
+    q.includes("donor") &&
+    q.includes("genomic fm") &&
+    (q.includes("scfm") || q.includes("single-cell fm") || q.includes("single cell fm")) &&
+    q.includes("spatial fm") &&
+    (q.includes("training") || q.includes("train"))
+  ) {
+    return [{ id: "forced-1", name: "queryGraph", input: { intent: "shared_donors_three_fms", params: {} } }];
+  }
+  if (
+    q.includes("donor") &&
+    q.includes("genomic fm") &&
+    (q.includes("single cell fm") || q.includes("single-cell fm") || q.includes("scfm")) &&
+    q.includes("spatial fm") &&
+    (q.includes("respectively") || q.includes("分别") || q.includes("各自"))
+  ) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: {
+        intent: "training_donors_by_models",
+        params: { modelIds: ["model_genomic", "model_scfm", "model_spatial"] },
+      },
+    }];
+  }
+  return [];
+};
+
+const formatIntentAnswer = (intent, params, result) => {
+  const rows = result?.rows || [];
+  if (!rows.length && intent !== "shared_donors_three_fms") {
+    return `No matching records were found in the current graph for ${intent.replace(/_/g, " ")}.`;
+  }
+
+  switch (intent) {
+    case "card_links":
+      return `The model card links to ${rows.length} dataset card(s):\n${rows.map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+    case "models_for_dataset":
+      return `Found ${rows.length} model(s) that used this dataset:\n${rows.map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+    case "datasets_for_model":
+      return `Found ${rows.length} dataset(s) used by this model:\n${rows.map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+    case "pipeline_for_dataset":
+      return `Pipeline for this dataset:\n${rows.map((r) => `- ${r.label}`).join("\n")}`;
+    case "downstream_tasks":
+      return `Found ${rows.length} downstream task(s):\n${rows.map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+    case "compliance_status": {
+      const hold = rows.filter((r) => String(r.compliance_hold).toLowerCase() === "true");
+      return `Models checked: ${rows.length}. Compliance hold: ${hold.length}.`;
+    }
+    case "provenance_chain":
+      return `Provenance chain contains ${rows.length} node(s):\n${rows.slice(0, 20).map((r, i) => `${i + 1}. ${r.label} [${r.type}]`).join("\n")}`;
+    case "node_detail":
+      return `Node found:\n${rows.map((r) => `- ${r.label} (${r.type})`).join("\n")}`;
+    case "shared_donors_three_fms": {
+      const s = result?.summary || {};
+      const head = `Found ${rows.length} donor(s) shared across training sets of Genomic FM, Single-cell FM, and Spatial FM.`;
+      const stats = `Genomic: ${s.genomic_training_donors ?? "?"}, scFM: ${s.scfm_training_donors ?? "?"}, Spatial: ${s.spatial_training_donors ?? "?"}.`;
+      const list = rows.length ? `\n${rows.map((r, i) => `${i + 1}. ${r.id}`).join("\n")}` : "";
+      return `${head}\n${stats}${list}`;
+    }
+    case "training_donors_by_models": {
+      return rows
+        .map((r) => {
+          const donors = Array.isArray(r.donors) ? r.donors : [];
+          const donorText =
+            donors.length > 120
+              ? `${donors.slice(0, 120).join(", ")} ... (showing first 120 of ${donors.length})`
+              : donors.join(", ");
+          return `${r.modelLabel} (${r.donorCount} donors):\n${donorText || "none"}`;
+        })
+        .join("\n\n");
+    }
+    default:
+      return null;
+  }
+};
 
 function AgentView() {
   const p = usePres();
@@ -1238,23 +1428,32 @@ function AgentView() {
       setPhase("thinking");
       addTrace({ kind:"step", icon:"🧠", label:"Step 1 - LLM analysis", detail:"Parsing question and selecting query intent..." });
 
-      const res1 = await fetch("/api/anthropic/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:1000,
-          system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
-          messages: history.map(m=>({role:m.role, content:m.content})),
-        })
-      });
+      const forcedToolUses = getForcedToolUses(userMsg);
+      let toolUses = forcedToolUses;
+      let textParts = [];
+      let data1 = null;
 
-      if (!res1.ok) throw new Error(`API returned ${res1.status}: ${res1.statusText}`);
+      if (forcedToolUses.length > 0) {
+        addTrace({ kind:"intent", icon:"🧭", label:"Rule route", detail:"Using deterministic intent routing for this question." });
+      } else {
+        const res1 = await fetch("/api/anthropic/messages", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            model:"claude-sonnet-4-20250514", max_tokens:1000,
+            system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
+            messages: history.map(m=>({role:m.role, content:m.content})),
+          })
+        });
 
-      const data1 = await res1.json();
-      if (data1.error) throw new Error(data1.error.message || "API error");
+        if (!res1.ok) throw new Error(`API returned ${res1.status}: ${res1.statusText}`);
 
-      const toolUses  = (data1.content||[]).filter(b=>b.type==="tool_use");
-      const textParts = (data1.content||[]).filter(b=>b.type==="text");
+        data1 = await res1.json();
+        if (data1.error) throw new Error(data1.error.message || "API error");
+
+        toolUses = (data1.content||[]).filter(b=>b.type==="tool_use");
+        textParts = (data1.content||[]).filter(b=>b.type==="text");
+      }
 
       if (toolUses.length === 0) {
         addTrace({ kind:"info", icon:"💬", label:"Direct answer", detail:"No graph query required" });
@@ -1283,6 +1482,19 @@ function AgentView() {
         toolResults.push({ type:"tool_result", tool_use_id:tu.id, content: JSON.stringify(result) });
       }
 
+      if (traceQueries.length === 1) {
+        const only = traceQueries[0];
+        const templated = formatIntentAnswer(only.intent, only.params, only.result);
+        if (templated) {
+          stopTimer();
+          addTrace({ kind:"done", icon:"✅", label:"Done", detail:"Answer ready (templated from graph results)" });
+          setMessages(m=>[...m, { role:"assistant", content:templated, trace:traceQueries }]);
+          setLoading(false);
+          setPhase(null);
+          return;
+        }
+      }
+
       setPhase("answering");
       addTrace({ kind:"step", icon:"✍️", label:"Step 3 - generating answer", detail:"Claude interpreting query results..." });
 
@@ -1295,7 +1507,7 @@ function AgentView() {
           system: GRAPH_CONTEXT, tools: AGENT_TOOLS,
           messages:[
             ...history.map(m=>({role:m.role,content:m.content})),
-            { role:"assistant", content:assistantToolOnly },
+            { role:"assistant", content:assistantToolOnly.length ? assistantToolOnly : (data1?.content || []) },
             { role:"user",      content:toolResults },
             { role:"user",      content:"Provide the final user-facing answer only. Do not describe your search steps. If no rows were returned, explicitly say no matching records were found in the current graph." },
           ],
@@ -1518,7 +1730,7 @@ function AgentView() {
 
         <div style={{ padding:"10px 12px", borderTop:"1px solid #e2e8f0", flexShrink:0 }}>
           <div style={{ fontSize:p?11:9.5, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8 }}>Available intents</div>
-          {["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links"].map(intent=>(
+          {["datasets_for_model","models_for_dataset","compliance_status","pipeline_for_dataset","downstream_tasks","provenance_chain","card_links","shared_donors_three_fms","training_donors_by_models"].map(intent=>(
             <div key={intent} style={{ fontSize:p?11:9, fontFamily:"monospace", color:"#7c3aed", padding:"2px 0", lineHeight:1.7 }}>{intent}</div>
           ))}
         </div>
