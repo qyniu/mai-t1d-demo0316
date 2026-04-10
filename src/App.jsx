@@ -1215,9 +1215,24 @@ function queryGraph(intent, params) {
       };
     }
     case "training_donors_by_models": {
+      const fallbackIds = [];
+      if (typeof params.modelId === "string" && params.modelId.trim()) {
+        fallbackIds.push(params.modelId.trim());
+      }
+      if (typeof params.query === "string") {
+        const q = normalizeQ(params.query);
+        if (q.includes("genomic")) fallbackIds.push("model_genomic");
+        if (q.includes("single-cell") || q.includes("single cell") || q.includes("scfm")) fallbackIds.push("model_scfm");
+        if (q.includes("spatial")) fallbackIds.push("model_spatial");
+      }
+
       const modelIds = Array.isArray(params.modelIds) && params.modelIds.length
         ? params.modelIds
-        : ["model_genomic", "model_scfm", "model_spatial"];
+        : [...new Set(fallbackIds)];
+
+      if (!modelIds.length) {
+        return { rows: [], summary: { note: "No model specified. Provide modelIds/modelId/query." } };
+      }
 
       const rows = modelIds.map((modelId) => {
         const modelNode = NODES.find((n) => n.id === modelId);
@@ -1320,6 +1335,27 @@ const getForcedToolUses = (userMsg) => {
     (q.includes("training") || q.includes("train"))
   ) {
     return [{ id: "forced-1", name: "queryGraph", input: { intent: "shared_donors_three_fms", params: {} } }];
+  }
+  if (q.includes("donor") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "training_donors_by_models", params: { modelIds: ["model_scfm"] } },
+    }];
+  }
+  if (q.includes("donor") && q.includes("genomic fm")) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "training_donors_by_models", params: { modelIds: ["model_genomic"] } },
+    }];
+  }
+  if (q.includes("donor") && q.includes("spatial fm")) {
+    return [{
+      id: "forced-1",
+      name: "queryGraph",
+      input: { intent: "training_donors_by_models", params: { modelIds: ["model_spatial"] } },
+    }];
   }
   if (
     q.includes("donor") &&
