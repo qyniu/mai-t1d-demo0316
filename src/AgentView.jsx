@@ -967,13 +967,14 @@ const AGENT_TOOLS = [
 ];
 
 const SUGGESTIONS = [
-  "What datasets trained Single-cell FM?",
-  "Which models used scRNA data?",
-  "Is any model on compliance hold?",
-  "Show the provenance chain for Genomic FM",
-  "What downstream tasks does Single-cell FM enable?",
-  "Who ran the WGS pipeline?",
-  "Which Dataset Cards does the Genomic FM Model Card link to?",
+  "What datasets trained model scFM-v1?",
+  "Which models are downstream of scRNA v1.2?",
+  "Is HPAP-088 WGS data available for use?",
+  "What QC pipeline produced scRNA for scFM-v1?",
+  "What governance events occurred in 2025-Q2?",
+  "Which models need re-eval after HPAP-016 re-QC?",
+  "Who is responsible for QC pipeline scRNA-v4?",
+  "Which Vanderbilt datasets were used post-2024?",
 ];
 
 const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
