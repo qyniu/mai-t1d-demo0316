@@ -8,15 +8,28 @@ const labelSingleLine = (label = "") => normalizeLabel(label).replace(/\n/g, " "
 
 //  GRAPH QUERY ENGINE 
 function queryGraph(intent, params) {
+  const normalizeEntityKey = (v = "") =>
+    String(v || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "");
   const resolveNode = (raw, preferredTypes=[]) => {
     const q = String(raw ?? "").trim().toLowerCase();
+    const qNorm = normalizeEntityKey(raw);
     if (!q) return null;
     const byId = NODES.find(n => n.id.toLowerCase() === q);
     if (byId) return byId;
     const pool = preferredTypes.length ? NODES.filter(n => preferredTypes.includes(n.type)) : NODES;
     const byLabelExact = pool.find(n => labelSingleLine(n.label).toLowerCase() === q);
     if (byLabelExact) return byLabelExact;
-    return pool.find(n => labelSingleLine(n.label).toLowerCase().includes(q)) || null;
+    const byNormalizedId = pool.find((n) => normalizeEntityKey(n.id) === qNorm);
+    if (byNormalizedId) return byNormalizedId;
+    const byNormalizedLabel = pool.find((n) => normalizeEntityKey(labelSingleLine(n.label)) === qNorm);
+    if (byNormalizedLabel) return byNormalizedLabel;
+    return (
+      pool.find((n) => labelSingleLine(n.label).toLowerCase().includes(q)) ||
+      pool.find((n) => normalizeEntityKey(n.id).includes(qNorm) || normalizeEntityKey(labelSingleLine(n.label)).includes(qNorm)) ||
+      null
+    );
   };
   const donorIdsForModelTraining = (modelId) => {
     if (!modelId) return new Set();
@@ -63,9 +76,33 @@ function queryGraph(intent, params) {
   const donorCodeToNode = new Map(
     donorNodes.map((n) => [String(labelSingleLine(n.label)).toUpperCase(), n])
   );
+  const bumpBucket = (obj, key) => {
+    const k = key || "Unknown";
+    obj[k] = (obj[k] || 0) + 1;
+  };
+  const diseaseTagFromClinicalDiagnosis = (raw = "") => {
+    const text = String(raw || "").toUpperCase();
+    if (!text) return null;
+    if (text.includes("T1D")) return "T1D";
+    if (text.includes("T2D")) return "T2D";
+    // Keep ND naming in outputs (No disease).
+    if (text.includes("ND")) return "ND";
+    return "Unknown";
+  };
   const diseaseTagFromDonor = (donorNode, overrides = {}) => {
     const donorCode = String(labelSingleLine(donorNode?.label || "")).toUpperCase();
     const overrideValue = overrides[donorCode];
+    const clinicalDiagnosis =
+      overrideValue ||
+      donorNode?.detail?.clinical_diagnosis ||
+      donorNode?.detail?.Clinical_Diagnosis ||
+      donorNode?.detail?.["clinical diagnosis"] ||
+      donorNode?.detail?.["Clinical Diagnosis"] ||
+      "";
+    const fromClinical = diseaseTagFromClinicalDiagnosis(clinicalDiagnosis);
+    if (fromClinical) return fromClinical;
+
+    // Backward-compatible fallback when clinical_diagnosis is absent.
     const stageRaw = String(
       overrideValue || donorNode?.detail?.["T1D stage__2"] || donorNode?.detail?.["T1D stage"] || ""
     ).toLowerCase();
@@ -93,7 +130,7 @@ function queryGraph(intent, params) {
       diseaseStatus.includes("no hx diabetes") ||
       diseaseStatus.includes("control")
     ) {
-      return "Control";
+      return "ND";
     }
     return "Unknown";
   };
@@ -161,9 +198,31 @@ function queryGraph(intent, params) {
   const resolveModalityDatasetIds = (raw) => {
     const q = String(raw || "").toLowerCase();
     for (const key of Object.keys(modalityToDatasetIds)) {
-      if (q.includes(key)) return modalityToDatasetIds[key];
+      if (qHas(q, key)) return modalityToDatasetIds[key];
     }
     return [];
+  };
+  const normalizeModelRef = (raw = "") => {
+    const s = String(raw || "").trim().toLowerCase();
+    if (!s) return "";
+    const aliasMap = {
+      model_proteinfm: "model_protein",
+      protein_fm: "model_protein",
+      proteinfm: "model_protein",
+      model_scfm: "model_scfm",
+      scfm: "model_scfm",
+      sc_fm: "model_scfm",
+      model_genomic: "model_genomic",
+      model_genomicfm: "model_genomic",
+      model_genomic_fm: "model_genomic",
+      genomicfm: "model_genomic",
+      geonomicfm: "model_genomic",
+      geonomic_fm: "model_genomic",
+      model_spatial: "model_spatial",
+      spatialfm: "model_spatial",
+      model_spatial_omics: "model_spatial_omics",
+    };
+    return aliasMap[s] || String(raw || "").trim();
   };
   const normalizeSplit = (raw = "") => {
     const s = String(raw || "").toLowerCase();
@@ -363,9 +422,9 @@ function queryGraph(intent, params) {
       }
       if (typeof params.query === "string") {
         const q = normalizeQ(params.query);
-        if (q.includes("genomic")) fallbackIds.push("model_genomic");
-        if (q.includes("single-cell") || q.includes("single cell") || q.includes("scfm")) fallbackIds.push("model_scfm");
-        if (q.includes("spatial")) fallbackIds.push("model_spatial");
+        if (qHas(q, "genomic") || qHas(q, "geonomic")) fallbackIds.push("model_genomic");
+        if (qHasAny(q, ["single-cell", "single cell", "scfm", "sc fm", "sc-fm"])) fallbackIds.push("model_scfm");
+        if (qHas(q, "spatial")) fallbackIds.push("model_spatial");
       }
 
       const modelIds = Array.isArray(params.modelIds) && params.modelIds.length
@@ -400,11 +459,18 @@ function queryGraph(intent, params) {
       const aSet = donorIdsForModelSplit(aNode?.id || a, splitA);
       const bSet = donorIdsForModelSplit(bNode?.id || b, splitB);
       const overlap = [...aSet].filter((id) => bSet.has(id)).sort();
+      const diseaseCounts = { T1D: 0, "AAb+": 0, T2D: 0, ND: 0, Unknown: 0 };
       return {
-        rows: overlap.map((id) => ({
-          id,
-          label: labelSingleLine(NODES.find((n) => n.id === id)?.label || id),
-        })),
+        rows: overlap.map((id) => {
+          const donorNode = NODES.find((n) => n.id === id);
+          const diseaseTag = diseaseTagFromDonor(donorNode);
+          bumpBucket(diseaseCounts, diseaseTag);
+          return {
+            id,
+            label: labelSingleLine(donorNode?.label || id),
+            diseaseTag,
+          };
+        }),
         summary: {
           modelAId: a,
           modelBId: b,
@@ -417,13 +483,19 @@ function queryGraph(intent, params) {
           overlapCount: overlap.length,
           overlapRatioA: aSet.size ? overlap.length / aSet.size : 0,
           overlapRatioB: bSet.size ? overlap.length / bSet.size : 0,
+          diseaseComposition: diseaseCounts,
+          t1dRatio: overlap.length ? diseaseCounts.T1D / overlap.length : 0,
           sameModel: a === b,
         },
       };
     }
     case "donor_overlap_between_models": {
-      const aRef = params.modelAId || params.modelA || params.modelAName || "model_genomic";
-      const bRef = params.modelBId || params.modelB || params.modelBName || "model_scfm";
+      const aRef = normalizeModelRef(
+        params.modelAId || params.modelA || params.modelAName || params.model1 || params.modelId1 || "model_genomic"
+      );
+      const bRef = normalizeModelRef(
+        params.modelBId || params.modelB || params.modelBName || params.model2 || params.modelId2 || "model_scfm"
+      );
       const splitA = normalizeSplit(params.splitA || params.split || "training");
       const splitB = normalizeSplit(params.splitB || params.split || "training");
       const aNode = resolveNode(aRef, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === aRef);
@@ -434,11 +506,18 @@ function queryGraph(intent, params) {
       const aSet = donorIdsForModelSplit(aNode.id, splitA);
       const bSet = donorIdsForModelSplit(bNode.id, splitB);
       const overlap = [...aSet].filter((id) => bSet.has(id)).sort();
+      const diseaseCounts = { T1D: 0, "AAb+": 0, T2D: 0, ND: 0, Unknown: 0 };
       return {
-        rows: overlap.map((id) => ({
-          id,
-          label: labelSingleLine(NODES.find((n) => n.id === id)?.label || id),
-        })),
+        rows: overlap.map((id) => {
+          const donorNode = NODES.find((n) => n.id === id);
+          const diseaseTag = diseaseTagFromDonor(donorNode);
+          bumpBucket(diseaseCounts, diseaseTag);
+          return {
+            id,
+            label: labelSingleLine(donorNode?.label || id),
+            diseaseTag,
+          };
+        }),
         summary: {
           found: true,
           modelAId: aNode.id,
@@ -452,6 +531,8 @@ function queryGraph(intent, params) {
           overlapCount: overlap.length,
           overlapRatioA: aSet.size ? overlap.length / aSet.size : 0,
           overlapRatioB: bSet.size ? overlap.length / bSet.size : 0,
+          diseaseComposition: diseaseCounts,
+          t1dRatio: overlap.length ? diseaseCounts.T1D / overlap.length : 0,
           sameModel: aNode.id === bNode.id,
         },
       };
@@ -460,12 +541,12 @@ function queryGraph(intent, params) {
       const modelId = params.modelId || "model_scfm";
       const modelNode = NODES.find((n) => n.id === modelId);
       const donors = [...donorIdsForModelTraining(modelId)];
-      const counts = { T1D: 0, "AAb+": 0, T2D: 0, Control: 0, Unknown: 0 };
+      const counts = { T1D: 0, "AAb+": 0, T2D: 0, ND: 0, Unknown: 0 };
       const rows = donors
         .map((id) => {
           const node = NODES.find((n) => n.id === id);
           const diseaseTag = diseaseTagFromDonor(node);
-          counts[diseaseTag] += 1;
+          bumpBucket(counts, diseaseTag);
           return {
             id,
             label: labelSingleLine(node?.label || id),
@@ -482,7 +563,7 @@ function queryGraph(intent, params) {
           donorCount: donors.length,
           composition: counts,
           t1dRatio: ratio(counts.T1D, donors.length),
-          controlRatio: ratio(counts.Control, donors.length),
+          ndRatio: ratio(counts.ND, donors.length),
         },
       };
     }
@@ -605,15 +686,15 @@ function queryGraph(intent, params) {
       const q = String(params.query || params.pipeline || "").toLowerCase();
       const versionMatch = q.match(/v\s*([0-9]+(?:\.[0-9]+)*)/i);
       const requestedVersion = versionMatch ? `v${versionMatch[1]}` : null;
-      const isScrna = q.includes("scrna") || q.includes("sc rna");
+      const isScrna = qHasAny(q, ["scrna", "sc rna"]);
       const pipelines = NODES.filter((n) => n.type === "Pipeline");
       const matches = pipelines.filter((p) => {
         const lbl = labelSingleLine(p.label).toLowerCase();
-        if (isScrna && !lbl.includes("scrna")) return false;
+        if (isScrna && !qHas(lbl, "scrna")) return false;
         if (requestedVersion && String(p.detail?.Version || "").toLowerCase() !== requestedVersion.toLowerCase()) return false;
-        return isScrna || q.includes(lbl);
+        return isScrna || qHas(q, lbl);
       });
-      const best = matches.length ? matches : (isScrna ? pipelines.filter((p) => labelSingleLine(p.label).toLowerCase().includes("scrna")) : []);
+      const best = matches.length ? matches : (isScrna ? pipelines.filter((p) => qHas(labelSingleLine(p.label).toLowerCase(), "scrna")) : []);
       const rows = best.map((p) => ({
         id: p.id,
         pipelineLabel: labelSingleLine(p.label),
@@ -741,17 +822,17 @@ function queryGraph(intent, params) {
       };
 
       const summarize = (donorIdSet, overrides = {}) => {
-        const counts = { T1D: 0, "AAb+": 0, T2D: 0, Control: 0, Unknown: 0 };
+        const counts = { T1D: 0, "AAb+": 0, T2D: 0, ND: 0, Unknown: 0 };
         [...donorIdSet].forEach((id) => {
           const donorNode = NODES.find((n) => n.id === id);
-          counts[diseaseTagFromDonor(donorNode, overrides)] += 1;
+          bumpBucket(counts, diseaseTagFromDonor(donorNode, overrides));
         });
         const total = [...donorIdSet].length;
         return {
           total,
           counts,
           t1dRatio: ratio(counts.T1D, total),
-          controlRatio: ratio(counts.Control, total),
+          ndRatio: ratio(counts.ND, total),
         };
       };
 
@@ -914,9 +995,9 @@ function queryGraph(intent, params) {
       const shared = [...donorIdsForModelTraining(genomicId)].filter(
         (id) => donorIdsForModelTraining(scfmId).has(id) && donorIdsForModelTraining(spatialId).has(id)
       );
-      const counts = { T1D: 0, "AAb+": 0, T2D: 0, Control: 0, Unknown: 0 };
+      const counts = { T1D: 0, "AAb+": 0, T2D: 0, ND: 0, Unknown: 0 };
       shared.forEach((id) => {
-        counts[diseaseTagFromDonor(NODES.find((n) => n.id === id))] += 1;
+        bumpBucket(counts, diseaseTagFromDonor(NODES.find((n) => n.id === id)));
       });
       return {
         rows: shared.sort().map((id) => {
@@ -927,21 +1008,29 @@ function queryGraph(intent, params) {
           sharedDonorCount: shared.length,
           composition: counts,
           t1dRatio: ratio(counts.T1D, shared.length),
-          controlRatio: ratio(counts.Control, shared.length),
+          ndRatio: ratio(counts.ND, shared.length),
         },
       };
     }
     case "search_nodes": {
-      const query = String(params.query || "").trim().toLowerCase();
-      const typeHints = asArray(params.typeHints || params.types).map((t) => String(t || "").toLowerCase());
+      const query = String(params.query || params.q || params.text || "").trim().toLowerCase();
+      const queryNorm = normalizeEntityKey(query);
+      const typeHints = asArray(
+        params.typeHints || params.types || params.node_types || params.node_type || params.type
+      ).map((t) => String(t || "").toLowerCase());
       const limit = Math.max(1, Math.min(Number(params.limit || 20), 100));
       if (!query) return { rows: [] };
       const score = (node) => {
         const id = String(node.id || "").toLowerCase();
         const label = labelSingleLine(node.label).toLowerCase();
+        const idNorm = normalizeEntityKey(id);
+        const labelNorm = normalizeEntityKey(label);
         if (id === query || label === query) return 100;
+        if (idNorm === queryNorm || labelNorm === queryNorm) return 95;
         if (id.startsWith(query) || label.startsWith(query)) return 80;
+        if (idNorm.startsWith(queryNorm) || labelNorm.startsWith(queryNorm)) return 75;
         if (id.includes(query) || label.includes(query)) return 60;
+        if (idNorm.includes(queryNorm) || labelNorm.includes(queryNorm)) return 55;
         return 0;
       };
       const rows = NODES
@@ -952,6 +1041,193 @@ function queryGraph(intent, params) {
         .slice(0, limit)
         .map((x) => ({ ...nodeRow(x.node), score: x.s }));
       return { rows };
+    }
+    case "list_nodes_by_type": {
+      const rawType = String(params.nodeType || params.type || params.node_type || "").trim();
+      const query = String(params.query || "").toLowerCase().trim();
+      const queryNorm = normalizeEntityKey(query);
+      const limit = Math.max(1, Math.min(Number(params.limit || 80), 300));
+      const nodeTypeNorm = rawType.toLowerCase();
+      const typeMatched = NODES.filter((n) =>
+        !nodeTypeNorm ? true : String(n.type || "").toLowerCase() === nodeTypeNorm
+      );
+      const toSearchable = (node) => {
+        const d = node?.detail || {};
+        const donor = d.Donor || d.donor_ID || d.donor || "";
+        const modality = d.modality || d.Modality || d["Data modality"] || "";
+        return `${String(node.id || "")} ${labelSingleLine(node.label)} ${String(donor)} ${String(modality)}`.toLowerCase();
+      };
+      const matched = typeMatched.filter((n) => {
+        if (!query) return true;
+        const text = toSearchable(n);
+        return text.includes(query) || normalizeEntityKey(text).includes(queryNorm);
+      });
+      const rows = matched
+        .slice(0, limit)
+        .map((n) => ({
+          id: n.id,
+          label: labelSingleLine(n.label),
+          type: n.type,
+          donor: n?.detail?.Donor || n?.detail?.donor_ID || "",
+          modality: n?.detail?.modality || n?.detail?.Modality || "",
+        }));
+      return {
+        rows,
+        summary: {
+          nodeType: rawType || "ALL",
+          totalMatched: matched.length,
+          returned: rows.length,
+          query: query || "",
+        },
+      };
+    }
+    case "impact_downstream": {
+      const entityInput = params.entityId || params.nodeId || params.query || params.donorCode || "";
+      const donorCode = normalizeDonorCode(entityInput);
+      const startNode =
+        (donorCode ? resolveNode(donorCode) || resolveNode(`donor_${donorCode.toLowerCase().replace("-", "_")}`) : null) ||
+        resolveNode(entityInput);
+      if (!startNode) {
+        return { rows: [], summary: { found: false, entity: String(entityInput || "") } };
+      }
+      const isDonor = String(startNode.id || "").startsWith("donor_hpap_");
+      const sampleIds = new Set();
+      const addSample = (sid) => {
+        const n = NODES.find((x) => x.id === sid);
+        if (n && String(n.type) === "RawData") sampleIds.add(sid);
+      };
+      if (isDonor) {
+        EDGES
+          .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === startNode.id)
+          .forEach((e) => addSample(edgeTgtId(e)));
+      } else if (String(startNode.type) === "RawData") {
+        addSample(startNode.id);
+      } else if (String(startNode.type) === "ProcessedData") {
+        // If dataset is the entry, use all its member samples.
+        EDGES
+          .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === startNode.id)
+          .forEach((e) => addSample(edgeTgtId(e)));
+      }
+
+      // Dataset closure only from anchor samples (prevents cross-donor sample fan-out).
+      const datasetIds = new Set();
+      sampleIds.forEach((sid) => {
+        EDGES
+          .filter((e) => e.label === "HAD_MEMBER" && edgeTgtId(e) === sid)
+          .forEach((e) => {
+            const dsId = edgeSrcId(e);
+            const dsNode = NODES.find((n) => n.id === dsId);
+            if (dsNode && String(dsNode.type) === "ProcessedData") datasetIds.add(dsId);
+          });
+      });
+      if (String(startNode.type) === "ProcessedData") datasetIds.add(startNode.id);
+
+      // Include split/parent dataset variants along DERIVED_FROM links.
+      let changed = true;
+      while (changed) {
+        changed = false;
+        EDGES
+          .filter((e) => e.label === "DERIVED_FROM")
+          .forEach((e) => {
+            const a = edgeSrcId(e);
+            const b = edgeTgtId(e);
+            const aNode = NODES.find((n) => n.id === a);
+            const bNode = NODES.find((n) => n.id === b);
+            const aIsDs = aNode && String(aNode.type) === "ProcessedData";
+            const bIsDs = bNode && String(bNode.type) === "ProcessedData";
+            if (!aIsDs || !bIsDs) return;
+            if (datasetIds.has(a) && !datasetIds.has(b)) {
+              datasetIds.add(b);
+              changed = true;
+            }
+            if (datasetIds.has(b) && !datasetIds.has(a)) {
+              datasetIds.add(a);
+              changed = true;
+            }
+          });
+      }
+
+      const modelIds = new Set();
+      datasetIds.forEach((dsId) => {
+        EDGES
+          .filter((e) => (e.label === "TRAINED_ON" || e.label === "EVALUATED_ON") && edgeSrcId(e) === dsId)
+          .forEach((e) => {
+            const mId = edgeTgtId(e);
+            const node = NODES.find((n) => n.id === mId);
+            if (node && ["Model", "FineTunedModel"].includes(String(node.type))) modelIds.add(mId);
+          });
+      });
+
+      // Downstream fine-tuned models that depend on impacted models.
+      let expanded = true;
+      while (expanded) {
+        expanded = false;
+        EDGES
+          .filter((e) => e.label === "FINETUNED_ON")
+          .forEach((e) => {
+            const ftId = edgeSrcId(e);
+            const baseId = edgeTgtId(e);
+            const ftNode = NODES.find((n) => n.id === ftId);
+            if (!ftNode || !["Model", "FineTunedModel"].includes(String(ftNode.type))) return;
+            if (modelIds.has(baseId) && !modelIds.has(ftId)) {
+              modelIds.add(ftId);
+              expanded = true;
+            }
+          });
+      }
+
+      const taskIds = new Set();
+      modelIds.forEach((mId) => {
+        EDGES
+          .filter((e) => e.label === "ENABLES" && edgeSrcId(e) === mId)
+          .forEach((e) => {
+            const tId = edgeTgtId(e);
+            const node = NODES.find((n) => n.id === tId);
+            if (node && String(node.type) === "DownstreamTask") taskIds.add(tId);
+          });
+      });
+
+      const rows = [
+        ...[...sampleIds].map((id) => ({ id, hop: 1, via: "HAD_MEMBER" })),
+        ...[...datasetIds].map((id) => ({ id, hop: 2, via: "HAD_MEMBER/DERIVED_FROM" })),
+        ...[...modelIds].map((id) => ({ id, hop: 3, via: "TRAINED_ON/EVALUATED_ON/FINETUNED_ON" })),
+        ...[...taskIds].map((id) => ({ id, hop: 4, via: "ENABLES" })),
+      ]
+        .map((r) => {
+          const n = NODES.find((x) => x.id === r.id);
+          return {
+            id: r.id,
+            label: labelSingleLine(n?.label || r.id),
+            type: n?.type || "Unknown",
+            via: r.via,
+            hop: r.hop,
+          };
+        })
+        .sort((a, b) => a.hop - b.hop || String(a.label).localeCompare(String(b.label)));
+
+      const modelRows = [...modelIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label) }));
+      const taskRows = [...taskIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label) }));
+      return {
+        rows,
+        summary: {
+          found: true,
+          startId: startNode.id,
+          startLabel: labelSingleLine(startNode.label),
+          reachedCount: rows.length,
+          sampleCount: sampleIds.size,
+          datasetCount: datasetIds.size,
+          modelCount: modelIds.size,
+          taskCount: taskRows.length,
+          impactedModels: modelRows.map((m) => m.label),
+          impactedTasks: taskRows.map((t) => t.label),
+        },
+      };
     }
     case "get_neighbors": {
       const seedIds = asArray(params.nodeIds || params.nodeId).map((x) => String(x || "").trim()).filter(Boolean);
@@ -998,41 +1274,70 @@ function queryGraph(intent, params) {
       return { rows };
     }
     case "extract_donors": {
-      const nodeIds = asArray(params.nodeIds || params.nodeId).map((x) => String(x || "").trim()).filter(Boolean);
-      const split = String(params.split || "training").toLowerCase();
+      let nodeIds = asArray(
+        params.nodeIds || params.nodeId || params.entity_ids || params.entity_id || params.id
+      ).map((x) => String(x || "").trim()).filter(Boolean);
+      const split = String(params.split || params.dataset_split || params.partition || "training").toLowerCase();
+      const normalizedSplit = split.includes("eval") || split.includes("validation") || split.includes("test")
+        ? "evaluation"
+        : "training";
+      const combine = String(params.combine || params.operator || "union").toLowerCase();
+      const scope = String(params.scope || "").toLowerCase();
+      if (!nodeIds.length && (scope === "all_models" || scope === "all_fms" || scope === "all_fm")) {
+        nodeIds = NODES.filter((n) => n.type === "Model").map((n) => n.id);
+      }
       if (!nodeIds.length) return { rows: [] };
-      const donorIds = new Set();
-      nodeIds.forEach((nodeId) => {
+
+      const donorSetForNode = (nodeId) => {
+        const out = new Set();
         if (donorNodeIds.has(nodeId)) {
-          donorIds.add(nodeId);
-          return;
+          out.add(nodeId);
+          return out;
         }
         const node = NODES.find((n) => n.id === nodeId);
-        if (!node) return;
+        if (!node) return out;
         if (String(node.type) === "Model" || String(node.type) === "FineTunedModel") {
-          donorIdsForModelSplit(nodeId, split === "evaluation" ? "evaluation" : "training").forEach((d) => donorIds.add(d));
-          return;
+          donorIdsForModelSplit(nodeId, normalizedSplit).forEach((d) => out.add(d));
+          return out;
         }
         if (String(node.type) === "ProcessedData") {
-          donorIdsForDatasetNode(nodeId).forEach((d) => donorIds.add(d));
-          return;
+          donorIdsForDatasetNode(nodeId).forEach((d) => out.add(d));
+          return out;
         }
         if (String(node.type) === "RawData") {
           const donorId = donorIdFromSampleId(nodeId);
-          if (donorId) donorIds.add(donorId);
-          return;
+          if (donorId) out.add(donorId);
+          return out;
         }
         // Generic fallback: look for adjacent dataset/model nodes and resolve donors from those.
         EDGES.filter((e) => edgeSrcId(e) === nodeId || edgeTgtId(e) === nodeId).forEach((e) => {
           const otherId = edgeSrcId(e) === nodeId ? edgeTgtId(e) : edgeSrcId(e);
           const otherNode = NODES.find((n) => n.id === otherId);
           if (!otherNode) return;
-          if (String(otherNode.type) === "ProcessedData") donorIdsForDatasetNode(otherId).forEach((d) => donorIds.add(d));
+          if (String(otherNode.type) === "ProcessedData") donorIdsForDatasetNode(otherId).forEach((d) => out.add(d));
           if (String(otherNode.type) === "Model" || String(otherNode.type) === "FineTunedModel") {
-            donorIdsForModelSplit(otherId, split === "evaluation" ? "evaluation" : "training").forEach((d) => donorIds.add(d));
+            donorIdsForModelSplit(otherId, normalizedSplit).forEach((d) => out.add(d));
           }
         });
-      });
+        return out;
+      };
+
+      const sourceSets = nodeIds.map((nid) => ({
+        sourceId: nid,
+        sourceLabel: labelSingleLine(NODES.find((n) => n.id === nid)?.label || nid),
+        donorSet: donorSetForNode(nid),
+      }));
+
+      let donorIds = new Set();
+      if ((combine === "intersection" || combine === "intersect") && sourceSets.length > 1) {
+        donorIds = new Set([...sourceSets[0].donorSet]);
+        sourceSets.slice(1).forEach((src) => {
+          donorIds = new Set([...donorIds].filter((id) => src.donorSet.has(id)));
+        });
+      } else {
+        sourceSets.forEach((src) => src.donorSet.forEach((id) => donorIds.add(id)));
+      }
+
       const rows = [...donorIds]
         .map((id) => NODES.find((n) => n.id === id))
         .filter(Boolean)
@@ -1042,7 +1347,122 @@ function queryGraph(intent, params) {
           label: labelSingleLine(n.label),
           diseaseTag: diseaseTagFromDonor(n),
         }));
-      return { rows, summary: { donorCount: rows.length } };
+      return {
+        rows,
+        summary: {
+          donorCount: rows.length,
+          split: normalizedSplit,
+          combine: combine === "intersection" || combine === "intersect" ? "intersection" : "union",
+          sourceCount: sourceSets.length,
+          sources: sourceSets.map((s) => ({
+            sourceId: s.sourceId,
+            sourceLabel: s.sourceLabel,
+            donorCount: s.donorSet.size,
+          })),
+        },
+      };
+    }
+    case "donor_attribute_ratio": {
+      const split = String(params.split || params.dataset_split || params.partition || "training").toLowerCase();
+      const normalizedSplit = split.includes("eval") || split.includes("validation") || split.includes("test")
+        ? "evaluation"
+        : "training";
+      const donorIdsFromParams = asArray(params.donorIds || params.nodeIds || params.ids)
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+        .filter((id) => donorNodeIds.has(id));
+      let donorIds = donorIdsFromParams;
+      if (!donorIds.length) {
+        const modelRef = params.modelId || params.model || params.modelAId || "";
+        const modelNode = resolveNode(modelRef, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === modelRef);
+        if (modelNode) {
+          donorIds = [...donorIdsForModelSplit(modelNode.id, normalizedSplit)];
+        }
+      }
+      const donorNodesForCalc = donorIds
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean);
+      if (!donorNodesForCalc.length) {
+        return { rows: [], summary: { totalDonors: 0, matchedDonors: 0, ratio: 0, targetValue: String(params.targetValue || params.target || "") } };
+      }
+
+      const targetRaw = String(params.targetValue || params.target || "").trim();
+      const targetNorm = normalizeQ(targetRaw);
+      const attrRaw = String(params.attribute || params.attributeKey || "").trim().toLowerCase();
+      const askType = String(params.askType || "ratio").toLowerCase();
+      const classifyEthnicity = (node) => {
+        const d = node?.detail || {};
+        const parts = [
+          d.Ethnicities,
+          d.ethnicity,
+          d.Ethnicity,
+          d.race,
+          d.Race,
+          d["Genetic Ancestry (PancDB)"],
+        ]
+          .map((x) => String(x || ""))
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!parts) return "Unknown";
+        if (parts.includes("white") || parts.includes("caucasian")) return "White";
+        if (parts.includes("black") || parts.includes("african")) return "Black";
+        if (parts.includes("asian")) return "Asian";
+        if (parts.includes("hispanic") || parts.includes("latino")) return "Hispanic";
+        return "Other";
+      };
+      const classifyDisease = (node) => diseaseTagFromDonor(node);
+      const inferMode = (() => {
+        if (attrRaw.includes("ethnic") || attrRaw.includes("race") || attrRaw.includes("ancestry")) return "ethnicity";
+        if (attrRaw.includes("diagnosis") || attrRaw.includes("disease") || attrRaw.includes("clinical")) return "disease";
+        if (!targetNorm) return "disease";
+        if (["t1d", "t1dm", "t2d", "t2dm", "nd", "control", "normal", "aab+"].some((x) => targetNorm.includes(x))) return "disease";
+        return "ethnicity";
+      })();
+      const canonicalTarget = (() => {
+        if (inferMode === "disease") {
+          if (targetNorm.includes("t1d")) return "T1D";
+          if (targetNorm.includes("t2d")) return "T2D";
+          if (targetNorm.includes("nd") || targetNorm.includes("control") || targetNorm.includes("normal")) return "ND";
+          if (targetNorm.includes("aab")) return "AAb+";
+          return targetRaw || "Unknown";
+        }
+        if (targetNorm.includes("white") || targetNorm.includes("caucasian") || targetNorm.includes("白")) return "White";
+        if (targetNorm.includes("black") || targetNorm.includes("african") || targetNorm.includes("黑")) return "Black";
+        if (targetNorm.includes("asian") || targetNorm.includes("亚")) return "Asian";
+        if (targetNorm.includes("hispanic") || targetNorm.includes("latino")) return "Hispanic";
+        return targetRaw || "Unknown";
+      })();
+
+      const rows = donorNodesForCalc.map((n) => {
+        const category = inferMode === "ethnicity" ? classifyEthnicity(n) : classifyDisease(n);
+        return {
+          id: n.id,
+          label: labelSingleLine(n.label),
+          value: category,
+          matched: String(category).toLowerCase() === String(canonicalTarget).toLowerCase(),
+        };
+      });
+      const total = rows.length;
+      const matched = rows.filter((r) => r.matched).length;
+      const composition = {};
+      rows.forEach((r) => {
+        const key = r.value || "Unknown";
+        composition[key] = (composition[key] || 0) + 1;
+      });
+      return {
+        rows,
+        summary: {
+          mode: inferMode,
+          askType: askType === "count" ? "count" : (askType === "distribution" ? "distribution" : "ratio"),
+          targetValue: canonicalTarget,
+          totalDonors: total,
+          matchedDonors: matched,
+          ratio: total ? matched / total : 0,
+          split: normalizedSplit,
+          composition,
+        },
+      };
     }
     case "set_operation": {
       const operator = String(params.operator || "intersect").toLowerCase();
@@ -1087,12 +1507,40 @@ You are a governance agent for the MAI-T1D (Multimodal AI for Type 1 Diabetes) p
 Do not rely on embedded full-graph text. Always use queryGraph to retrieve evidence.
 
 Graph structure hints:
-- Node types include: Model, FineTunedModel, ProcessedData, RawData, QCPipeline, DatasetCard, ModelCard, DownstreamTask, Donor.
-- Key edges include: TRAINED_ON, EVALUATED_ON, HAD_MEMBER, GENERATED_BY, DOCUMENTED_BY, LINKED_TO, ENABLES, EMBEDDED_BY, FINETUNED_ON, DERIVED_FROM.
-- Donor overlap questions usually require:
-  1) locate target model nodes,
-  2) extract donors from each model split (training/evaluation),
-  3) compute set intersection.
+- Node type semantics and typical properties:
+  - Donor: donor-level metadata (clinical_diagnosis, DiseaseStatus, T1D stage, sex, age, Ethnicities/Genetic Ancestry, modality availability flags).
+  - RawData (sample-level): sample metadata (donor code, modality, cell/tissue, assay/run-level fields).
+  - ProcessedData (dataset-level): processed cohort/dataset identity, version, path/contact, split variants.
+  - QCPipeline: pipeline version, path, owner/contact/email.
+  - Model / FineTunedModel: model name/version/status, architecture/base model, fine-tune metadata.
+  - DatasetCard / ModelCard: governance documentation metadata and linkage.
+  - DownstreamTask: enabled application/task nodes.
+
+- Edge direction semantics (treat these as provenance links):
+  - Dataset -> Model: TRAINED_ON / EVALUATED_ON
+  - Dataset -> Sample: HAD_MEMBER
+  - Donor -> Sample: HAD_MEMBER
+  - Pipeline -> Dataset: GENERATED_BY
+  - Dataset/Model -> Card: DOCUMENTED_BY
+  - ModelCard <-> DatasetCard: LINKED_TO
+  - Model -> DownstreamTask: ENABLES
+  - Embedding -> Model: EMBEDDED_BY
+  - FineTunedModel -> BaseModel/Embedding: FINETUNED_ON
+  - ParentDataset -> SplitDataset or SourceDataset -> DerivedAsset: DERIVED_FROM
+
+- Upstream/downstream interpretation:
+  - Upstream of model means following TRAINED_ON/EVALUATED_ON backwards to datasets, then HAD_MEMBER to samples, then HAD_MEMBER to donors.
+  - Downstream of model means following ENABLES to tasks and related documentation links.
+
+- Model aliases (normalize before querying):
+  - "sc FM", "sc-fm", "single-cell FM" => model_scfm
+  - "protein FM" => model_protein
+  - "spatial FM" => model_spatial
+  - "genomic FM" => model_genomic
+
+- For questions like "哪些donor同时出现在A和B的训练集中":
+  - Prefer donor_overlap_between_models with splitA/splitB set to training.
+  - Return donor list + overlap count + each model donor count.
 
 Available intents:
 - search_nodes
@@ -1121,8 +1569,10 @@ Answer style requirements:
 
 const INTENT_ENUM = [
   "search_nodes",
+  "list_nodes_by_type",
   "get_neighbors",
   "extract_donors",
+  "donor_attribute_ratio",
   "set_operation",
   "donor_overlap_between_models",
   "node_detail",
@@ -1131,6 +1581,7 @@ const INTENT_ENUM = [
   "models_for_dataset",
   "pipeline_for_dataset",
   "downstream_tasks",
+  "impact_downstream",
 ];
 
 const AGENT_TOOLS = [
@@ -1154,6 +1605,187 @@ const SUGGESTIONS = [
 ];
 
 const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+const qHas = (text = "", term = "") => {
+  const t = normalizeQ(text);
+  const k = normalizeQ(term);
+  if (!t || !k) return false;
+  const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|\\b|\\s|_)${escaped}(\\b|\\s|_|$)`, "i").test(t) || t.indexOf(k) >= 0;
+};
+const qHasAny = (text = "", terms = []) => terms.some((x) => qHas(text, x));
+const qHasAll = (text = "", terms = []) => terms.every((x) => qHas(text, x));
+const normalizeSearchText = (s = "") =>
+  String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+const levenshteinDistance = (a = "", b = "") => {
+  const x = String(a || "");
+  const y = String(b || "");
+  const m = x.length;
+  const n = y.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= n; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      const cost = x[i - 1] === y[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return dp[m][n];
+};
+const fuzzyAliasScore = (question = "", alias = "") => {
+  const q = normalizeSearchText(question);
+  const a = normalizeSearchText(alias);
+  if (!q || !a) return 0;
+  if (qHas(q, a)) return 1;
+  const qTokens = q.split(" ").filter(Boolean);
+  const aTokens = a.split(" ").filter(Boolean);
+  if (!qTokens.length || !aTokens.length) return 0;
+  const lens = [Math.max(1, aTokens.length - 1), aTokens.length, aTokens.length + 1];
+  let best = 0;
+  for (const winLen of lens) {
+    if (winLen > qTokens.length) continue;
+    for (let i = 0; i <= qTokens.length - winLen; i += 1) {
+      const window = qTokens.slice(i, i + winLen).join(" ");
+      const dist = levenshteinDistance(window, a);
+      const denom = Math.max(window.length, a.length) || 1;
+      const score = 1 - dist / denom;
+      if (score > best) best = score;
+    }
+  }
+  return Math.max(0, Math.min(1, best));
+};
+const MODEL_ALIAS_DICTIONARY = {
+  model_genomic: [
+    "genomic fm",
+    "geonomic fm",
+    "genomicfm",
+    "geonomicfm",
+    "epcot",
+    "epcot v2",
+    "epcot-v2",
+    "genomic foundation model",
+  ],
+  model_scfm: [
+    "single-cell fm",
+    "single cell fm",
+    "singlecell fm",
+    "scfm",
+    "sc fm",
+    "sc-fm",
+    "epiagent",
+  ],
+  model_spatial: [
+    "spatial fm",
+    "kronos",
+    "spatial foundation model",
+  ],
+  model_spatial_omics: [
+    "spatial omics fm",
+    "spatialomics fm",
+    "spatial omics foundation model",
+  ],
+  model_protein: [
+    "protein fm",
+    "proteinfm",
+    "protein foundation model",
+  ],
+};
+const MODEL_CANDIDATE_THRESHOLD = 0.74;
+const resolveModelIdFromText = (raw = "") => {
+  const input = String(raw || "").trim();
+  if (!input) return "";
+  const ref = input.toLowerCase().replace(/\s+/g, "");
+  const aliasToModelId = {
+    model_proteinfm: "model_protein",
+    proteinfm: "model_protein",
+    protein_fm: "model_protein",
+    model_scfm: "model_scfm",
+    scfm: "model_scfm",
+    sc_fm: "model_scfm",
+    model_genomic: "model_genomic",
+    model_genomicfm: "model_genomic",
+    model_genomic_fm: "model_genomic",
+    genomicfm: "model_genomic",
+    geonomicfm: "model_genomic",
+    geonomic_fm: "model_genomic",
+    model_spatial: "model_spatial",
+    spatialfm: "model_spatial",
+    model_spatial_omics: "model_spatial_omics",
+  };
+  const normalizedRef = aliasToModelId[ref] || input;
+  const byRef = NODES.find((n) => n.id === normalizedRef && n.type === "Model");
+  if (byRef) return byRef.id;
+  const modelNodes = NODES.filter((n) => n.type === "Model");
+  const exactByLabel = modelNodes.find((n) => normalizeSearchText(labelSingleLine(n.label)) === normalizeSearchText(input));
+  if (exactByLabel) return exactByLabel.id;
+
+  const candidates = [];
+  for (const node of modelNodes) {
+    const aliases = new Set([
+      labelSingleLine(node.label),
+      node.id,
+      ...(MODEL_ALIAS_DICTIONARY[node.id] || []),
+    ]);
+    let best = 0;
+    let matchedAlias = "";
+    for (const alias of aliases) {
+      const score = fuzzyAliasScore(input, alias);
+      if (score > best) {
+        best = score;
+        matchedAlias = alias;
+      }
+    }
+    if (best >= MODEL_CANDIDATE_THRESHOLD) {
+      candidates.push({
+        id: node.id,
+        label: labelSingleLine(node.label),
+        score: best,
+        alias: matchedAlias,
+      });
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]?.id || "";
+};
+const linkModelEntities = (question = "", { threshold = MODEL_CANDIDATE_THRESHOLD, maxCandidates = 6 } = {}) => {
+  const modelNodes = NODES.filter((n) => n.type === "Model");
+  const ranked = [];
+  for (const node of modelNodes) {
+    const aliases = new Set([
+      labelSingleLine(node.label),
+      node.id,
+      ...(MODEL_ALIAS_DICTIONARY[node.id] || []),
+    ]);
+    let best = 0;
+    let matchedAlias = "";
+    for (const alias of aliases) {
+      const score = fuzzyAliasScore(question, alias);
+      if (score > best) {
+        best = score;
+        matchedAlias = alias;
+      }
+    }
+    if (best >= threshold) {
+      ranked.push({
+        id: node.id,
+        label: labelSingleLine(node.label),
+        score: best,
+        alias: matchedAlias,
+      });
+    }
+  }
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked.slice(0, maxCandidates);
+};
 const normalizeDonorCode = (raw = "") => {
   const text = String(raw || "").trim().toUpperCase();
   if (!text) return null;
@@ -1227,8 +1859,15 @@ Return JSON only with schema:
 Rules:
 - Allowed intents: ${INTENT_ENUM.join(", ")}
 - Prefer atomic retrieval intents first: search_nodes, get_neighbors, extract_donors, set_operation.
+- Use linked_entities as a high-priority grounding hint for canonical IDs when provided.
+- For donor-attribute statistics questions (e.g., T1D/ND/White count or ratio), use donor_attribute_ratio after obtaining donor set evidence.
+- For inventory/list questions ("what raw data/datasets/models exist"), prefer list_nodes_by_type first, then drill down.
+- For change-impact questions ("X changed, what downstream models/data are impacted"), use impact_downstream first.
 - Use domain intents only when they directly and fully match the question.
 - If question compares multiple entities (overlap/intersection/shared/simultaneously), do NOT use single-entity intents.
+- If question asks donors shared by all FMs, use extract_donors with {scope:"all_models", split:"training|evaluation", combine:"intersection"}.
+- Normalize aliases first (e.g., "sc FM" => model_scfm).
+- For two-model donor-overlap questions, prefer donor_overlap_between_models with explicit model IDs and split.
 - Use "tool" when more evidence is needed.
 - Use "answer" only when existing evidence is sufficient.
 - Use "clarify" only if required entity/constraint is missing.
@@ -1241,22 +1880,73 @@ If evidence is insufficient, explicitly say what is missing in the current graph
 Do not describe internal reasoning steps.
 `;
 const extractModelMentions = (q) => {
-  const mentionRegex = /(genomic fm|single-cell fm|single cell fm|scfm|spatial fm|spatial omics fm|protein fm)/g;
-  const out = [];
-  let m;
-  while ((m = mentionRegex.exec(q)) !== null) {
-    const t = m[1];
-    if (t === "genomic fm") out.push("model_genomic");
-    else if (t === "spatial fm") out.push("model_spatial");
-    else if (t === "spatial omics fm") out.push("model_spatial_omics");
-    else if (t === "protein fm") out.push("model_protein");
-    else out.push("model_scfm");
-  }
-  return out;
+  return linkModelEntities(q).map((x) => x.id);
+};
+const detectSplitFromQuestion = (q = "") => {
+  const s = normalizeQ(q);
+  if (qHasAny(s, ["evaluation", "eval", "validation", "test set", "testing", "测试集", "验证集"])) return "evaluation";
+  return "training";
 };
 const OVERLAP_TOKENS = ["overlap", "shared", "intersection", "intersect", "交集", "重合", "同时", "共同"];
-const hasOverlapSignal = (q = "") => OVERLAP_TOKENS.some((t) => q.includes(t));
+const hasOverlapSignal = (q = "") => qHasAny(q, OVERLAP_TOKENS);
 const hasMultiModelSignal = (q = "") => extractModelMentions(q).length >= 2;
+const NODE_TYPE_ALIASES = [
+  { nodeType: "RawData", aliases: ["raw data", "rawdata", "原始数据", "sample", "样本"] },
+  { nodeType: "ProcessedData", aliases: ["dataset", "processed data", "处理后数据", "数据集"] },
+  { nodeType: "Model", aliases: ["model", "fm", "foundation model", "模型"] },
+  { nodeType: "QCPipeline", aliases: ["pipeline", "qc", "流程"] },
+  { nodeType: "DatasetCard", aliases: ["dataset card"] },
+  { nodeType: "ModelCard", aliases: ["model card"] },
+];
+const detectNodeTypeFromQuestion = (q = "") => {
+  const s = normalizeQ(q);
+  for (const item of NODE_TYPE_ALIASES) {
+    if (qHasAny(s, item.aliases)) return item.nodeType;
+  }
+  return "";
+};
+const parseInventoryRequest = (q = "") => {
+  const s = normalizeQ(q);
+  const asksList = qHasAny(s, ["what", "which", "list", "哪些", "有哪些", "show", "列出"]);
+  const nodeType = detectNodeTypeFromQuestion(s);
+  if (!asksList || !nodeType) return null;
+  const donorCode = (String(q).toUpperCase().match(/HPAP[-_\s]?\d{1,3}/)?.[0] || "").replace(/[_\s]/g, "-");
+  const query = donorCode || (qHas(s, "hpap") ? "hpap" : "");
+  return { nodeType, query };
+};
+const parseImpactRequest = (q = "") => {
+  const s = normalizeQ(q);
+  const asksImpact = qHasAny(s, ["影响", "impact", "impacted", "downstream", "下游", "变更", "修改", "更新"]);
+  if (!asksImpact) return null;
+  const donorCode = normalizeDonorCode(q);
+  return {
+    entityQuery: donorCode || String(q || "").trim(),
+    depth: qHasAny(s, ["all", "全部", "all downstream"]) ? 8 : 6,
+  };
+};
+const parseDonorAttributeTargetFromQuestion = (q = "") => {
+  const s = normalizeQ(q);
+  const asksRatio = qHasAny(s, ["ratio", "比例", "占比", "percent", "percentage"]);
+  const asksCount = qHasAny(s, ["how many", "count", "多少", "几位", "几人", "数量", "number of"]);
+  const asksDistribution = qHasAny(s, ["distribution", "distributions", "composition", "breakdown", "分布", "构成", "组成"]);
+  const asksDonor = qHasAny(s, ["donor", "donors", "供体"]);
+  const asksStats = asksRatio || asksCount || asksDistribution;
+  if (!asksStats || !asksDonor) return { needsAttributeStats: false, askType: "ratio" };
+  const askType = asksDistribution ? "distribution" : (asksCount && !asksRatio ? "count" : "ratio");
+  if (qHasAny(s, ["t1d", "t1dm"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "T1D" };
+  if (qHasAny(s, ["t2d", "t2dm"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "T2D" };
+  if (qHasAny(s, ["nd", "control", "normal"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "ND" };
+  if (qHasAny(s, ["aab", "aab+"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "AAb+" };
+  if (qHasAny(s, ["white", "caucasian", "白人", "白"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "White" };
+  if (qHasAny(s, ["black", "african", "黑人", "黑"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "Black" };
+  if (qHasAny(s, ["asian", "亚裔", "亚洲"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "Asian" };
+  if (qHasAny(s, ["hispanic", "latino", "拉丁"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "Hispanic" };
+  // If user asks diagnosis distribution without explicit category, default to disease mode.
+  if (qHasAny(s, ["diagnosis", "diagnoses", "clinical diagnosis", "临床诊断", "诊断", "disease"])) {
+    return { needsAttributeStats: true, askType, mode: "disease", targetValue: "" };
+  }
+  return { needsAttributeStats: true, askType, mode: "disease", targetValue: "" };
+};
 
 const getForcedToolUses = (userMsg) => {
   // Intentionally disabled: no brittle hardcoded keyword->intent mapping.
@@ -1277,6 +1967,7 @@ const formatIntentAnswer = (intent, params, result) => {
     intent !== "models_need_reeval_after_donor_qc" &&
     intent !== "qc_pipeline_owner" &&
     intent !== "institution_datasets_used_after_year"
+    && intent !== "impact_downstream"
   ) {
     return `No matching records were found in the current graph for ${intent.replace(/_/g, " ")}.`;
   }
@@ -1324,13 +2015,12 @@ const formatIntentAnswer = (intent, params, result) => {
       const pctA = ((s.overlapRatioA || 0) * 100).toFixed(1);
       const pctB = ((s.overlapRatioB || 0) * 100).toFixed(1);
       const same = s.sameModel ? " (same model compared to itself)" : "";
+      const donorLabels = rows.map((r) => r.label || r.id).filter(Boolean);
+      const preview = donorLabels.slice(0, 15).join(", ");
       return [
-        `${s.modelALabel} vs ${s.modelBLabel}${same}`,
-        `Split: ${s.splitA || "training"} (A) vs ${s.splitB || "training"} (B)`,
-        `Overlap donors: ${s.overlapCount}`,
-        `${s.modelALabel}: ${s.modelADonorCount} donors`,
-        `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
-        `Overlap ratio: ${pctA}% of model A, ${pctB}% of model B`,
+        `在 ${s.modelALabel} 和 ${s.modelBLabel}${same} 的 ${s.splitA || "training"} / ${s.splitB || "training"} 数据中，共有 ${s.overlapCount} 位 donor 重叠。`,
+        `${s.modelALabel} 总 donor 数 ${s.modelADonorCount}，${s.modelBLabel} 总 donor 数 ${s.modelBDonorCount}。重叠占比为 ${pctA}%（相对模型A）和 ${pctB}%（相对模型B）。`,
+        donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有重叠 donor。",
       ].join("\n");
     }
     case "donor_overlap_between_models": {
@@ -1341,13 +2031,39 @@ const formatIntentAnswer = (intent, params, result) => {
       const pctA = ((s.overlapRatioA || 0) * 100).toFixed(1);
       const pctB = ((s.overlapRatioB || 0) * 100).toFixed(1);
       const same = s.sameModel ? " (same model compared to itself)" : "";
+      const donorLabels = rows.map((r) => r.label || r.id).filter(Boolean);
+      const preview = donorLabels.slice(0, 15).join(", ");
       return [
-        `${s.modelALabel} vs ${s.modelBLabel}${same}`,
-        `Split: ${s.splitA || "training"} (A) vs ${s.splitB || "training"} (B)`,
-        `Overlap donors: ${s.overlapCount}`,
-        `${s.modelALabel}: ${s.modelADonorCount} donors`,
-        `${s.modelBLabel}: ${s.modelBDonorCount} donors`,
-        `Overlap ratio: ${pctA}% of model A, ${pctB}% of model B`,
+        `在 ${s.modelALabel} 和 ${s.modelBLabel}${same} 的 ${s.splitA || "training"} / ${s.splitB || "training"} 数据中，共有 ${s.overlapCount} 位 donor 重叠。`,
+        `${s.modelALabel} 总 donor 数 ${s.modelADonorCount}，${s.modelBLabel} 总 donor 数 ${s.modelBDonorCount}。重叠占比为 ${pctA}%（相对模型A）和 ${pctB}%（相对模型B）。`,
+        donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有重叠 donor。",
+      ].join("\n");
+    }
+    case "donor_attribute_ratio": {
+      const s = result?.summary || {};
+      const pct = ((s.ratio || 0) * 100).toFixed(2);
+      const comp = s.composition || {};
+      const compText = Object.keys(comp).length
+        ? Object.entries(comp).map(([k, v]) => `${k}=${v}`).join(", ")
+        : "none";
+      const askType = String(s.askType || params?.askType || "ratio").toLowerCase();
+      if (askType === "distribution") {
+        return [
+          `在当前 donor 集合（${s.totalDonors ?? rows.length} 位）中，${s.mode === "ethnicity" ? "人群" : "diagnosis"}分布如下：`,
+          compText,
+        ].join("\n");
+      }
+      if (askType === "count") {
+        return [
+          `在当前 donor 集合（${s.totalDonors ?? rows.length} 位）中，${s.targetValue || "目标属性"} 的数量是 ${s.matchedDonors ?? 0}。`,
+          `属性维度：${s.mode || "unknown"}，split：${s.split || "training"}。`,
+          `组成：${compText}`,
+        ].join("\n");
+      }
+      return [
+        `在当前 donor 集合（${s.totalDonors ?? rows.length} 位）中，${s.targetValue || "目标属性"} 的比例为 ${pct}% (${s.matchedDonors ?? 0}/${s.totalDonors ?? rows.length})。`,
+        `属性维度：${s.mode || "unknown"}，split：${s.split || "training"}。`,
+        `组成：${compText}`,
       ].join("\n");
     }
     case "disease_composition_for_model_training": {
@@ -1356,7 +2072,7 @@ const formatIntentAnswer = (intent, params, result) => {
       return [
         `${s.modelLabel} training donors: ${s.donorCount ?? rows.length}`,
         `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}%`,
-        `Counts: T1D=${c.T1D ?? 0}, Control=${c.Control ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0}`,
+        `Counts: T1D=${c.T1D ?? 0}, ND=${c.ND ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0}`,
       ].join("\n");
     }
     case "donor_modality_availability": {
@@ -1438,8 +2154,8 @@ const formatIntentAnswer = (intent, params, result) => {
       const sh = s.shift || {};
       return [
         `Training/Evaluation distribution drift simulation for ${s.modelId}:`,
-        `Before -> training T1D:Control = ${bTrain.counts?.T1D ?? 0}:${bTrain.counts?.Control ?? 0}, evaluation T1D:Control = ${bEval.counts?.T1D ?? 0}:${bEval.counts?.Control ?? 0}`,
-        `After  -> training T1D:Control = ${aTrain.counts?.T1D ?? 0}:${aTrain.counts?.Control ?? 0}, evaluation T1D:Control = ${aEval.counts?.T1D ?? 0}:${aEval.counts?.Control ?? 0}`,
+        `Before -> training T1D:ND = ${bTrain.counts?.T1D ?? 0}:${bTrain.counts?.ND ?? 0}, evaluation T1D:ND = ${bEval.counts?.T1D ?? 0}:${bEval.counts?.ND ?? 0}`,
+        `After  -> training T1D:ND = ${aTrain.counts?.T1D ?? 0}:${aTrain.counts?.ND ?? 0}, evaluation T1D:ND = ${aEval.counts?.T1D ?? 0}:${aEval.counts?.ND ?? 0}`,
         `Shift  -> training T1D delta: ${sh.trainingT1DDelta ?? 0} (${((sh.trainingT1DRatioDelta || 0) * 100).toFixed(1)} pp), evaluation T1D delta: ${sh.evaluationT1DDelta ?? 0} (${((sh.evaluationT1DRatioDelta || 0) * 100).toFixed(1)} pp)`,
         rows.length ? `Applied reclassifications: ${rows.map((r) => `${r.donorCode}->${r.newStage}`).join(", ")}` : "Applied reclassifications: none",
       ].join("\n");
@@ -1472,16 +2188,49 @@ const formatIntentAnswer = (intent, params, result) => {
       return [
         `Disease composition bias among donors shared by 3 FM training sets:`,
         `Shared donors: ${s.sharedDonorCount ?? rows.length}`,
-        `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}% (T1D=${c.T1D ?? 0}, Control=${c.Control ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0})`,
+        `T1D ratio: ${((s.t1dRatio || 0) * 100).toFixed(1)}% (T1D=${c.T1D ?? 0}, ND=${c.ND ?? 0}, AAb+=${c["AAb+"] ?? 0}, T2D=${c.T2D ?? 0}, Unknown=${c.Unknown ?? 0})`,
       ].join("\n");
     }
     case "search_nodes":
       return `Found ${rows.length} matching node(s):\n${rows.map((r, i) => `${i + 1}. ${r.label} [${r.type}]`).join("\n")}`;
+    case "list_nodes_by_type": {
+      const s = result?.summary || {};
+      const lines = rows.slice(0, 40).map((r, i) => `${i + 1}. ${r.label}${r.donor ? ` (donor=${r.donor})` : ""}`);
+      return [
+        `Found ${s.totalMatched ?? rows.length} node(s) of type ${s.nodeType || "unknown"}${s.query ? ` matching "${s.query}"` : ""}.`,
+        lines.length ? lines.join("\n") : "No matching nodes.",
+      ].join("\n");
+    }
+    case "impact_downstream": {
+      const s = result?.summary || {};
+      if (!s.found) return `No matching entity was found for "${s.entity || params?.query || ""}" in current graph.`;
+      const modelPreview = (s.impactedModels || []).slice(0, 12).join(", ");
+      const taskPreview = (s.impactedTasks || []).slice(0, 12).join(", ");
+      return [
+        `${s.startLabel} 变更的下游影响概览：`,
+        `受影响样本 ${s.sampleCount ?? 0}，数据集 ${s.datasetCount ?? 0}，模型 ${s.modelCount ?? 0}，下游任务 ${s.taskCount ?? 0}。`,
+        `受影响模型：${modelPreview || "none"}`,
+        `受影响任务：${taskPreview || "none"}`,
+      ].join("\n");
+    }
     case "get_neighbors":
       return `Found ${rows.length} neighbor edge(s):\n${rows.slice(0, 50).map((r, i) => `${i + 1}. ${r.fromLabel} -${r.edgeLabel}-> ${r.toLabel}`).join("\n")}`;
     case "extract_donors": {
       const s = result?.summary || {};
-      return `Extracted ${s.donorCount ?? rows.length} donor(s):\n${rows.slice(0, 200).map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
+      const donorLabels = rows.map((r) => r.label || r.id).filter(Boolean);
+      const preview = donorLabels.slice(0, 15).join(", ");
+      const sourceSummary = Array.isArray(s.sources)
+        ? s.sources.map((x) => `${x.sourceLabel}(${x.donorCount})`).join("；")
+        : "";
+      if ((s.combine || "").toLowerCase() === "intersection" && (s.sourceCount || 0) > 1) {
+        return [
+          `这 ${s.sourceCount} 个来源在 ${s.split || "training"} 数据中的共同 donor 有 ${s.donorCount ?? rows.length} 位。`,
+          sourceSummary ? `来源 donor 规模：${sourceSummary}` : "",
+          donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有共同 donor。",
+        ].filter(Boolean).join("\n");
+      }
+      const hdr = `提取到 ${s.donorCount ?? rows.length} 位 donor（split=${s.split || "training"}，combine=${s.combine || "union"}，sources=${s.sourceCount || 0}）。`;
+      return `${hdr}\n${rows.slice(0, 200).map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
     }
     case "set_operation": {
       const s = result?.summary || {};
@@ -1511,6 +2260,7 @@ function AgentView({ p = false }) {
   const stopTimer  = () => { if(timerRef.current){ setElapsed(((Date.now()-timerRef.current)/1000).toFixed(1)); timerRef.current=null; }};
 
   const addTrace = (step) => setLiveTrace(t=>[...t, { ...step, ts: Date.now() }]);
+  const yieldToUI = () => new Promise((resolve) => setTimeout(resolve, 0));
   const callAnthropic = async ({ system, messages, tools, max_tokens=1000 }) => {
     const res = await fetch("/api/anthropic/messages", {
       method:"POST",
@@ -1537,15 +2287,67 @@ function AgentView({ p = false }) {
       summary: result?.summary || null,
     };
   };
-  const normalizeToolUse = (intent, params, idx=1) => {
+  const normalizeToolUse = (intent, params, idx=1, linkedEntities=null) => {
     const safeIntent = String(intent || "").trim();
     if (!INTENT_ENUM.includes(safeIntent)) return null;
+    const safeParams = params && typeof params === "object" ? { ...params } : {};
+    const linkedModelIds = Array.isArray(linkedEntities?.modelIds) ? linkedEntities.modelIds : [];
+    const normalizeModelParam = (v) => {
+      const id = resolveModelIdFromText(v);
+      return id || String(v || "").trim();
+    };
+
+    if (safeIntent === "donor_overlap_between_models" || safeIntent === "training_donor_overlap_between_models") {
+      const a = safeParams.modelAId || safeParams.modelA || safeParams.modelAName || safeParams.model1 || safeParams.modelId1 || "";
+      const b = safeParams.modelBId || safeParams.modelB || safeParams.modelBName || safeParams.model2 || safeParams.modelId2 || "";
+      let aId = normalizeModelParam(a);
+      let bId = normalizeModelParam(b);
+      if (!aId && linkedModelIds.length >= 1) aId = linkedModelIds[0];
+      if (!bId && linkedModelIds.length >= 2) bId = linkedModelIds[1];
+      if (aId) safeParams.modelAId = aId;
+      if (bId) safeParams.modelBId = bId;
+    }
+
+    if (safeIntent === "training_donors_by_models") {
+      const modelIdsRaw = Array.isArray(safeParams.modelIds) ? safeParams.modelIds : [];
+      const normalizedIds = modelIdsRaw.map(normalizeModelParam).filter(Boolean);
+      if (normalizedIds.length) safeParams.modelIds = [...new Set(normalizedIds)];
+      if (!safeParams.modelId && linkedModelIds.length === 1) safeParams.modelId = linkedModelIds[0];
+      if (!safeParams.modelIds && linkedModelIds.length > 1) safeParams.modelIds = linkedModelIds;
+      if (safeParams.modelId) safeParams.modelId = normalizeModelParam(safeParams.modelId);
+    }
+
+    if (safeIntent === "extract_donors") {
+      const nodeIdsRaw = Array.isArray(safeParams.nodeIds) ? safeParams.nodeIds : [];
+      const normalizedNodeIds = nodeIdsRaw
+        .map((x) => {
+          const mid = resolveModelIdFromText(x);
+          return mid || x;
+        })
+        .filter(Boolean);
+      if (normalizedNodeIds.length) safeParams.nodeIds = normalizedNodeIds;
+      if (!safeParams.nodeIds && !safeParams.nodeId && linkedModelIds.length >= 1) {
+        safeParams.nodeIds = linkedModelIds.slice(0, 3);
+      }
+      if (safeParams.nodeId) {
+        const mid = resolveModelIdFromText(safeParams.nodeId);
+        if (mid) safeParams.nodeId = mid;
+      }
+    }
+    if (safeIntent === "donor_attribute_ratio") {
+      if (safeParams.modelId) safeParams.modelId = normalizeModelParam(safeParams.modelId);
+      if (!safeParams.modelId && linkedModelIds.length === 1) safeParams.modelId = linkedModelIds[0];
+      if (Array.isArray(safeParams.donorIds)) {
+        safeParams.donorIds = safeParams.donorIds.map((x) => String(x || "").trim()).filter(Boolean);
+      }
+    }
+
     return {
       id: `graph-${idx}-${Date.now()}`,
       name: "queryGraph",
       input: {
         intent: safeIntent,
-        params: params && typeof params === "object" ? params : {},
+        params: safeParams,
       },
     };
   };
@@ -1567,9 +2369,12 @@ function AgentView({ p = false }) {
     try {
       setPhase("thinking");
       addTrace({ kind:"step", icon:"🧠", label:"LangGraph - route", detail:"Initializing graph state..." });
+      // Let React paint user bubble + thinking state before running graph workflow.
+      await yieldToUI();
 
       const LGState = Annotation.Root({
         question: Annotation({ default: () => "" }),
+        linkedEntities: Annotation({ default: () => ({ modelIds: [], candidates: [] }), reducer: (_x, y) => y }),
         history: Annotation({ default: () => [] }),
         forceOnly: Annotation({ default: () => false, reducer: (_x, y) => y }),
         forcedQueue: Annotation({ default: () => [], reducer: (_x, y) => y }),
@@ -1585,10 +2390,23 @@ function AgentView({ p = false }) {
 
       const routeNode = async (state) => {
         const forced = getForcedToolUses(state.question);
+        const linkedCandidates = linkModelEntities(state.question);
+        const linkedModelIds = [...new Set(linkedCandidates.map((x) => x.id))];
+        if (linkedCandidates.length) {
+          const hintText = linkedCandidates
+            .slice(0, 3)
+            .map((x) => `${x.label} (${x.score.toFixed(2)})`)
+            .join("; ");
+          addTrace({ kind:"info", icon:"🧩", label:"Entity linker", detail:`Model candidates: ${hintText}` });
+        }
         if (forced.length) {
           addTrace({ kind:"intent", icon:"🧭", label:"LangGraph route", detail:`Forced route with ${forced.length} tool step(s).` });
         }
-        return { forcedQueue: forced, forceOnly: forced.length > 0 };
+        return {
+          forcedQueue: forced,
+          forceOnly: forced.length > 0,
+          linkedEntities: { modelIds: linkedModelIds, candidates: linkedCandidates },
+        };
       };
 
       const planNode = async (state) => {
@@ -1611,6 +2429,109 @@ function AgentView({ p = false }) {
           return { nextToolUse: next, forcedQueue: rest };
         }
 
+        const qNormEarly = normalizeQ(state.question);
+        const impactReq = parseImpactRequest(state.question);
+        if (impactReq && !(state.traceQueries || []).length) {
+          return {
+            nextToolUse: normalizeToolUse(
+              "impact_downstream",
+              {
+                query: impactReq.entityQuery,
+                depth: impactReq.depth,
+              },
+              state.step + 1,
+              state.linkedEntities
+            ),
+          };
+        }
+        const inventoryReq = parseInventoryRequest(state.question);
+        if (inventoryReq && !(state.traceQueries || []).length) {
+          return {
+            nextToolUse: normalizeToolUse(
+              "list_nodes_by_type",
+              {
+                nodeType: inventoryReq.nodeType,
+                query: inventoryReq.query || "",
+                limit: 120,
+              },
+              state.step + 1,
+              state.linkedEntities
+            ),
+          };
+        }
+        const ratioTarget = parseDonorAttributeTargetFromQuestion(qNormEarly);
+        const linkedModelIds = Array.isArray(state.linkedEntities?.modelIds) ? state.linkedEntities.modelIds : [];
+        const mentionedModels = [...new Set(linkedModelIds.length ? linkedModelIds : extractModelMentions(qNormEarly))];
+        if (qHas(qNormEarly, "donor") && hasOverlapSignal(qNormEarly) && mentionedModels.length >= 3) {
+          const overlapAlreadyDone = state.traceQueries.some(
+            (q) =>
+              q.intent === "extract_donors" &&
+              String(q.result?.summary?.combine || "").toLowerCase() === "intersection"
+          );
+          if (!overlapAlreadyDone) {
+            return {
+              nextToolUse: normalizeToolUse(
+                "extract_donors",
+                {
+                  nodeIds: mentionedModels,
+                  split: detectSplitFromQuestion(state.question),
+                  combine: "intersection",
+                },
+                state.step + 1,
+                state.linkedEntities
+              ),
+            };
+          }
+        }
+        if (ratioTarget?.needsAttributeStats) {
+          const donorAttrDone = (state.traceQueries || []).some(
+            (q) => q.intent === "donor_attribute_ratio" && (q.result?.summary?.totalDonors || 0) > 0
+          );
+          if (!donorAttrDone) {
+            const overlapEvidence = [...(state.traceQueries || [])]
+              .reverse()
+              .find((q) => q.intent === "donor_overlap_between_models" || q.intent === "training_donor_overlap_between_models");
+            const donorSetEvidence = [...(state.traceQueries || [])]
+              .reverse()
+              .find((q) => q.intent === "extract_donors" && (q.result?.rows?.length || 0) > 0);
+            const sourceDonorIds = overlapEvidence
+              ? (overlapEvidence.result?.rows || []).map((r) => r.id).filter(Boolean)
+              : (donorSetEvidence ? (donorSetEvidence.result?.rows || []).map((r) => r.id).filter(Boolean) : []);
+            if (sourceDonorIds.length) {
+              return {
+                nextToolUse: normalizeToolUse(
+                  "donor_attribute_ratio",
+                  {
+                    donorIds: sourceDonorIds,
+                    split: detectSplitFromQuestion(state.question),
+                    attribute: ratioTarget.mode === "ethnicity" ? "Ethnicities" : "clinical_diagnosis",
+                    targetValue: ratioTarget.targetValue || "",
+                    askType: ratioTarget.askType || "ratio",
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+            if (!hasOverlapSignal(qNormEarly) && mentionedModels.length === 1) {
+              return {
+                nextToolUse: normalizeToolUse(
+                  "donor_attribute_ratio",
+                  {
+                    modelId: mentionedModels[0],
+                    split: detectSplitFromQuestion(state.question),
+                    attribute: ratioTarget.mode === "ethnicity" ? "Ethnicities" : "clinical_diagnosis",
+                    targetValue: ratioTarget.targetValue || "",
+                    askType: ratioTarget.askType || "ratio",
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+          }
+        }
+
         addTrace({ kind:"step", icon:"🗺️", label:`LangGraph plan step ${state.step + 1}`, detail:"Selecting next tool action..." });
         const evidence = state.traceQueries.map((q) => summarizeResultForPlanner(q.intent, q.result));
         const plannerMsg = {
@@ -1619,6 +2540,7 @@ function AgentView({ p = false }) {
             question: state.question,
             step: state.step + 1,
             maxSteps: LANGGRAPH_MAX_STEPS,
+            linked_entities: state.linkedEntities || { modelIds: [], candidates: [] },
             evidence,
           }),
         };
@@ -1642,7 +2564,7 @@ function AgentView({ p = false }) {
           return { done: true, finalAnswer: String(planJson.answer || "") };
         }
 
-        const nextTool = normalizeToolUse(planJson.intent, planJson.params, state.step + 1);
+        const nextTool = normalizeToolUse(planJson.intent, planJson.params, state.step + 1, state.linkedEntities);
         if (nextTool) {
           const sig = `${nextTool.input.intent}:${JSON.stringify(nextTool.input.params || {})}`;
           if (sig === state.lastActionSignature) {
@@ -1662,7 +2584,7 @@ function AgentView({ p = false }) {
         });
         const fallbackTool = (fallbackData.content || []).find((b) => b.type === "tool_use");
         if (fallbackTool?.input?.intent) {
-          const fallbackNext = normalizeToolUse(fallbackTool.input.intent, fallbackTool.input.params, state.step + 1);
+          const fallbackNext = normalizeToolUse(fallbackTool.input.intent, fallbackTool.input.params, state.step + 1, state.linkedEntities);
           if (fallbackNext) {
             const sig = `${fallbackNext.input.intent}:${JSON.stringify(fallbackNext.input.params || {})}`;
             if (sig === state.lastActionSignature) return { done: true };
@@ -1678,6 +2600,8 @@ function AgentView({ p = false }) {
         if (!tu?.input?.intent) return { step: state.step + 1 };
         setPhase("querying");
         addTrace({ kind:"step", icon:"🔎", label:"LangGraph - act", detail:`Executing ${tu.input.intent}` });
+        // Allow trace/state updates to render before synchronous graph computation.
+        await yieldToUI();
         const { intent, params } = tu.input;
         const result = queryGraph(intent, params || {});
         const nRows = result.rows?.length ?? 0;
@@ -1703,10 +2627,31 @@ function AgentView({ p = false }) {
 
       const verifyCoverage = (question, traceQueries) => {
         const q = normalizeQ(question);
-        const hasOverlapNeed = q.includes("donor") && hasOverlapSignal(q) && hasMultiModelSignal(q);
+        const impactNeed = !!parseImpactRequest(question);
+        const hasOverlapNeed = qHas(q, "donor") && hasOverlapSignal(q) && hasMultiModelSignal(q);
+        const ratioTarget = parseDonorAttributeTargetFromQuestion(q);
+        const ratioNeed = !!ratioTarget?.needsAttributeStats;
         const last = traceQueries[traceQueries.length - 1];
         if (!last) return { ok: false, reason: "No query result yet." };
         const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
+
+        // Ratio questions must include donor-attribute evidence.
+        if (ratioNeed) {
+          const attrHit = traceQueries.some(
+            (x) => x.intent === "donor_attribute_ratio" && (x.result?.summary?.totalDonors || 0) > 0
+          );
+          if (!attrHit) {
+            return { ok: false, reason: "Ratio question needs donor_attribute_ratio evidence." };
+          }
+          return { ok: true, reason: "Donor attribute ratio evidence is present." };
+        }
+        if (impactNeed) {
+          const impactHit = traceQueries.some(
+            (x) => x.intent === "impact_downstream" && (x.result?.summary?.found || (x.result?.rows?.length || 0) > 0)
+          );
+          if (!impactHit) return { ok: false, reason: "Impact question needs impact_downstream evidence." };
+          return { ok: true, reason: "Impact analysis evidence is present." };
+        }
 
         if (hasOverlapNeed) {
           const overlapHit = traceQueries.some((x) =>
@@ -1718,15 +2663,23 @@ function AgentView({ p = false }) {
           return { ok: true, reason: "Overlap query evidence is present." };
         }
 
-        if (q.includes("provenance chain") || q.includes("lineage chain") || q.includes("溯源链")) {
+        if (qHasAny(q, ["provenance chain", "lineage chain", "溯源链"])) {
           const chainHit = traceQueries.some((x) => x.intent === "provenance_chain" && (x.result?.rows?.length || 0) > 0);
           return chainHit
             ? { ok: true, reason: "Provenance chain evidence found." }
             : { ok: false, reason: "Provenance chain question requires non-empty provenance_chain result." };
         }
 
-        if (q.includes("training set") && q.includes("donor")) {
-          const donorHit = traceQueries.some((x) => x.intent === "training_donors_by_models" && (x.result?.rows?.length || 0) > 0);
+        if (qHasAll(q, ["training set", "donor"])) {
+          const donorHit = traceQueries.some((x) => {
+            if (x.intent === "training_donors_by_models" && (x.result?.rows?.length || 0) > 0) return true;
+            if (x.intent === "donor_overlap_between_models" && (x.result?.rows?.length || 0) > 0) return true;
+            if (x.intent === "extract_donors") {
+              const split = String(x.result?.summary?.split || "").toLowerCase();
+              return split === "training" || (x.result?.summary?.sourceCount || 0) > 0;
+            }
+            return false;
+          });
           return donorHit
             ? { ok: true, reason: "Training donor evidence found." }
             : { ok: false, reason: "Training-set donor question requires donor extraction evidence." };
@@ -1807,6 +2760,7 @@ function AgentView({ p = false }) {
       const app = workflow.compile();
       const finalState = await app.invoke({
         question: userMsg,
+        linkedEntities: { modelIds: [], candidates: [] },
         history,
         forceOnly: false,
         forcedQueue: [],
