@@ -1084,42 +1084,34 @@ if (typeof window !== "undefined") {
 //  AGENT VIEW 
 const GRAPH_CONTEXT = `
 You are a governance agent for the MAI-T1D (Multimodal AI for Type 1 Diabetes) project knowledge graph.
-Do not rely on embedded full-graph text. Always use the queryGraph tool to retrieve data.
+Do not rely on embedded full-graph text. Always use queryGraph to retrieve evidence.
+
+Graph structure hints:
+- Node types include: Model, FineTunedModel, ProcessedData, RawData, QCPipeline, DatasetCard, ModelCard, DownstreamTask, Donor.
+- Key edges include: TRAINED_ON, EVALUATED_ON, HAD_MEMBER, GENERATED_BY, DOCUMENTED_BY, LINKED_TO, ENABLES, EMBEDDED_BY, FINETUNED_ON, DERIVED_FROM.
+- Donor overlap questions usually require:
+  1) locate target model nodes,
+  2) extract donors from each model split (training/evaluation),
+  3) compute set intersection.
+
 Available intents:
-- datasets_for_model
-- models_for_dataset
-- compliance_status
-- pipeline_for_dataset
-- downstream_tasks
-- provenance_chain
-- card_links
-- node_detail
-- shared_donors_three_fms
-- training_donors_by_models
-- training_donor_overlap_between_models
-- donor_overlap_between_models
-- disease_composition_for_model_training
-- donor_modality_availability
-- qc_pipeline_for_model_modality
-- governance_events_by_period
-- models_need_reeval_after_donor_qc
-- qc_pipeline_owner
-- institution_datasets_used_after_year
-- cross_model_donor_leakage
-- cross_modality_embedding_leakage
-- train_eval_distribution_drift
-- upstream_metadata_impact
-- shared_validation_datasets_across_fms
-- disease_composition_bias_three_fms
 - search_nodes
 - get_neighbors
 - extract_donors
 - set_operation
+- donor_overlap_between_models
+- node_detail
+- provenance_chain
+- datasets_for_model
+- models_for_dataset
+- pipeline_for_dataset
+- downstream_tasks
+
 Workflow:
-1) Prefer atomic graph retrieval intents first (search_nodes/get_neighbors/extract_donors/set_operation).
-2) Use domain-specific intents only when atomic retrieval is clearly insufficient.
-3) Call queryGraph.
-4) Answer only from tool results.
+1) Plan multi-step retrieval from graph structure.
+2) Prefer atomic intents (search_nodes/get_neighbors/extract_donors/set_operation).
+3) Use donor_overlap_between_models only when the question is explicitly two-model donor overlap.
+4) Answer only from retrieved evidence.
 Answer style requirements:
 - Return a direct final answer, not your search process.
 - Never write phrases like "let me try/search/look up".
@@ -1128,42 +1120,24 @@ Answer style requirements:
 `;
 
 const INTENT_ENUM = [
-  "datasets_for_model",
-  "models_for_dataset",
-  "compliance_status",
-  "pipeline_for_dataset",
-  "downstream_tasks",
-  "provenance_chain",
-  "card_links",
-  "node_detail",
-  "shared_donors_three_fms",
-  "training_donors_by_models",
-  "training_donor_overlap_between_models",
-  "donor_overlap_between_models",
-  "disease_composition_for_model_training",
-  "donor_modality_availability",
-  "qc_pipeline_for_model_modality",
-  "governance_events_by_period",
-  "models_need_reeval_after_donor_qc",
-  "qc_pipeline_owner",
-  "institution_datasets_used_after_year",
-  "cross_model_donor_leakage",
-  "cross_modality_embedding_leakage",
-  "train_eval_distribution_drift",
-  "upstream_metadata_impact",
-  "shared_validation_datasets_across_fms",
-  "disease_composition_bias_three_fms",
   "search_nodes",
   "get_neighbors",
   "extract_donors",
   "set_operation",
+  "donor_overlap_between_models",
+  "node_detail",
+  "provenance_chain",
+  "datasets_for_model",
+  "models_for_dataset",
+  "pipeline_for_dataset",
+  "downstream_tasks",
 ];
 
 const AGENT_TOOLS = [
-  { name:"queryGraph", description:"Execute a structured query against the MAI-T1D provenance graph",
+  { name:"queryGraph", description:"Execute a structured read-only query against the MAI-T1D provenance graph",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:INTENT_ENUM, description:"The query pattern to execute" },
-      params:{ type:"object", description:"Parameters for the query. For card_links, prefer {mcId:'mc_genomic'} or {modelId:'model_genomic'}. {nodeId:'model_genomic'} is also accepted." }
+      intent:{ type:"string", enum:INTENT_ENUM, description:"Query intent to execute" },
+      params:{ type:"object", description:"Intent parameters. Prefer explicit IDs when available; otherwise pass natural-language query text." }
     }, required:["intent","params"] }
   }
 ];
@@ -1186,18 +1160,6 @@ const normalizeDonorCode = (raw = "") => {
   const m = text.match(/HPAP[-_\s]?(\d{1,3})/);
   if (!m) return null;
   return `HPAP-${m[1].padStart(3, "0")}`;
-};
-const extractDonorCodeFromQuery = (q = "") => {
-  const raw = String(q || "");
-  const patterns = [
-    /HPAP[-_\s]?(\d{1,3})/i,
-    /DONOR[-_\s]?HPAP[-_\s]?(\d{1,3})/i,
-  ];
-  for (const p of patterns) {
-    const m = raw.match(p);
-    if (m?.[1]) return `HPAP-${String(m[1]).padStart(3, "0")}`;
-  }
-  return null;
 };
 const extractJsonFromText = (text = "") => {
   const raw = String(text || "").trim();
@@ -1292,239 +1254,14 @@ const extractModelMentions = (q) => {
   }
   return out;
 };
-const extractSplitFromQuery = (q = "") => {
-  if (
-    q.includes("evaluation") ||
-    q.includes("eval") ||
-    q.includes("validation") ||
-    q.includes("test set") ||
-    q.includes("testing") ||
-    q.includes("测试集") ||
-    q.includes("验证集")
-  ) return "evaluation";
-  if (q.includes("training") || q.includes("train set") || q.includes("训练集")) return "training";
-  return "training";
-};
 const OVERLAP_TOKENS = ["overlap", "shared", "intersection", "intersect", "交集", "重合", "同时", "共同"];
 const hasOverlapSignal = (q = "") => OVERLAP_TOKENS.some((t) => q.includes(t));
 const hasMultiModelSignal = (q = "") => extractModelMentions(q).length >= 2;
-const isCompositeDonorQuestion = (q = "") =>
-  q.includes("donor") &&
-  (hasOverlapSignal(q) || hasMultiModelSignal(q) || q.includes("vs") || q.includes("和"));
 
 const getForcedToolUses = (userMsg) => {
-  const q = normalizeQ(userMsg);
-  if (!q) return [];
-  const compositeDonorQ = isCompositeDonorQuestion(q);
-
-  if (q.includes("dataset cards") && q.includes("genomic fm") && q.includes("model card")) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "card_links", params: { modelId: "model_genomic" } } }];
-  }
-  if (
-    (q.includes("provenance chain") || q.includes("lineage chain") || q.includes("谱系链") || q.includes("溯源链")) &&
-    q.includes("genomic fm")
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "provenance_chain", params: { nodeId: "model_genomic" } } }];
-  }
-  if (q.includes("what datasets trained") && (q.includes("scfm-v1") || q.includes("scfm v1") || q.includes("single-cell fm v1") || q.includes("single cell fm v1"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "datasets_for_model", params: { modelId: "model_scfm" } } }];
-  }
-  if (q.includes("downstream of scrna") || (q.includes("which models") && q.includes("scrna"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_for_dataset", params: { datasetType: "scRNA-seq" } } }];
-  }
-  if ((q.includes("hpap-") || q.includes("hpap ")) && q.includes("wgs") && (q.includes("available") || q.includes("可用") || q.includes("available for use"))) {
-    const donorCode = extractDonorCodeFromQuery(userMsg) || extractDonorCodeFromQuery(q) || "";
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "donor_modality_availability", params: { donorCode, modality: "WGS" } } }];
-  }
-  if (q.includes("what qc pipeline produced scrna") && (q.includes("scfm-v1") || q.includes("scfm v1") || q.includes("single-cell fm"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "qc_pipeline_for_model_modality", params: { modelId: "model_scfm", modality: "scRNA-seq" } } }];
-  }
-  if (q.includes("governance events") && (q.includes("2025-q2") || q.includes("2025 q2"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "governance_events_by_period", params: { period: "2025-Q2" } } }];
-  }
-  if (q.includes("need re-eval") && (q.includes("hpap-") || q.includes("hpap "))) {
-    const donorCode = extractDonorCodeFromQuery(userMsg) || extractDonorCodeFromQuery(q) || "";
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_need_reeval_after_donor_qc", params: { donorCode } } }];
-  }
-  if ((q.includes("who is responsible") || q.includes("负责人")) && q.includes("qc pipeline") && (q.includes("scrna-v4") || q.includes("scrna v4") || q.includes("scrna"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "qc_pipeline_owner", params: { query: userMsg } } }];
-  }
-  if (q.includes("vanderbilt") && q.includes("datasets") && (q.includes("post-2024") || q.includes("after 2024"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "institution_datasets_used_after_year", params: { institution: "Vanderbilt", year: 2024 } } }];
-  }
-  if (q.includes("which models used") && (q.includes("scrna") || q.includes("sc rna") || q.includes("scRNA".toLowerCase()))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "models_for_dataset", params: { datasetType: "scRNA-seq" } } }];
-  }
-  if (q.includes("what datasets trained") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "datasets_for_model", params: { modelId: "model_scfm" } } }];
-  }
-  if (q.includes("compliance hold") || q.includes("on compliance hold")) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "compliance_status", params: {} } }];
-  }
-  if (q.includes("who ran the wgs pipeline")) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "node_detail", params: { query: "WGS" } } }];
-  }
-  if (
-    q.includes("donor") &&
-    q.includes("t1d") &&
-    (q.includes("比例") || q.includes("ratio") || q.includes("占比")) &&
-    (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))
-  ) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "disease_composition_for_model_training", params: { modelId: "model_scfm" } },
-    }];
-  }
-  if (
-    q.includes("donor") &&
-    q.includes("t1d") &&
-    (q.includes("比例") || q.includes("ratio") || q.includes("占比")) &&
-    q.includes("genomic fm")
-  ) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "disease_composition_for_model_training", params: { modelId: "model_genomic" } },
-    }];
-  }
-  if (
-    q.includes("donor") &&
-    q.includes("t1d") &&
-    (q.includes("比例") || q.includes("ratio") || q.includes("占比")) &&
-    q.includes("spatial fm")
-  ) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "disease_composition_for_model_training", params: { modelId: "model_spatial" } },
-    }];
-  }
-  if (
-    q.includes("哪些donor") &&
-    (q.includes("三个fm") || (q.includes("genomic fm") && q.includes("spatial fm") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm")))) &&
-    (q.includes("training") || q.includes("训练"))
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "cross_model_donor_leakage", params: {} } }];
-  }
-  if (
-    (
-      q.includes("embedding leakage") ||
-      q.includes("embedding 泄露") ||
-      q.includes("embedding泄露") ||
-      q.includes("data leakage") ||
-      q.includes("training data交叉") ||
-      q.includes("training data 交叉") ||
-      q.includes("training交叉") ||
-      q.includes("训练 data 交叉") ||
-      q.includes("数据交叉") ||
-      q.includes("leakage")
-    ) &&
-    (q.includes("embedding")) &&
-    (q.includes("genomic fm")) &&
-    (q.includes("scfm") || q.includes("single-cell fm") || q.includes("single cell fm"))
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "cross_modality_embedding_leakage", params: {} } }];
-  }
-  if (
-    (
-      q.includes("distribution drift") ||
-      q.includes("分布漂移") ||
-      q.includes("drift") ||
-      q.includes("reclassification") ||
-      q.includes("reclassify")
-    ) &&
-    (q.includes("training") || q.includes("validation") || q.includes("evaluation") || q.includes("80/20") || q.includes("分配"))
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "train_eval_distribution_drift", params: {} } }];
-  }
-  if (
-    (q.includes("metadata") || q.includes("reclassify") || q.includes("reclassification") || q.includes("上游")) &&
-    (q.includes("impact") || q.includes("影响"))
-  ) {
-    const donorCode = extractDonorCodeFromQuery(userMsg) || extractDonorCodeFromQuery(q);
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "upstream_metadata_impact", params: { donorCode: donorCode || "HPAP-002" } },
-    }];
-  }
-  if (
-    (q.includes("shared validation") || q.includes("公共数据集") || q.includes("共用") || q.includes("overlap")) &&
-    q.includes("genomic fm") &&
-    (q.includes("single-cell") || q.includes("single cell") || q.includes("scfm") || q.includes("embedding"))
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "shared_validation_datasets_across_fms", params: {} } }];
-  }
-  if (
-    q.includes("t1d") &&
-    (q.includes("比例") || q.includes("ratio") || q.includes("bias") || q.includes("composition")) &&
-    q.includes("三个fm")
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "disease_composition_bias_three_fms", params: {} } }];
-  }
-  if (
-    q.includes("donor") &&
-    hasOverlapSignal(q)
-  ) {
-    const mentions = extractModelMentions(q);
-    if (mentions.length >= 2) {
-      const a = mentions[0];
-      const b = mentions[1];
-      const split = extractSplitFromQuery(q);
-      return [{
-        id: "forced-1",
-        name: "queryGraph",
-        input: { intent: "donor_overlap_between_models", params: { modelAId: a, modelBId: b, splitA: split, splitB: split } },
-      }];
-    }
-  }
-  if (
-    q.includes("donor") &&
-    q.includes("genomic fm") &&
-    (q.includes("scfm") || q.includes("single-cell fm") || q.includes("single cell fm")) &&
-    q.includes("spatial fm") &&
-    (q.includes("training") || q.includes("train"))
-  ) {
-    return [{ id: "forced-1", name: "queryGraph", input: { intent: "shared_donors_three_fms", params: {} } }];
-  }
-  if (!compositeDonorQ && q.includes("donor") && (q.includes("single-cell fm") || q.includes("single cell fm") || q.includes("scfm"))) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "training_donors_by_models", params: { modelIds: ["model_scfm"] } },
-    }];
-  }
-  if (!compositeDonorQ && q.includes("donor") && q.includes("genomic fm")) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "training_donors_by_models", params: { modelIds: ["model_genomic"] } },
-    }];
-  }
-  if (!compositeDonorQ && q.includes("donor") && q.includes("spatial fm")) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: { intent: "training_donors_by_models", params: { modelIds: ["model_spatial"] } },
-    }];
-  }
-  if (
-    q.includes("donor") &&
-    q.includes("genomic fm") &&
-    (q.includes("single cell fm") || q.includes("single-cell fm") || q.includes("scfm")) &&
-    q.includes("spatial fm") &&
-    (q.includes("respectively") || q.includes("分别") || q.includes("各自"))
-  ) {
-    return [{
-      id: "forced-1",
-      name: "queryGraph",
-      input: {
-        intent: "training_donors_by_models",
-        params: { modelIds: ["model_genomic", "model_scfm", "model_spatial"] },
-      },
-    }];
-  }
+  // Intentionally disabled: no brittle hardcoded keyword->intent mapping.
+  // Let planner decide via graph-structure-aware multi-step retrieval.
+  void userMsg;
   return [];
 };
 
@@ -1872,25 +1609,6 @@ function AgentView({ p = false }) {
         if (state.forcedQueue?.length) {
           const [next, ...rest] = state.forcedQueue;
           return { nextToolUse: next, forcedQueue: rest };
-        }
-
-        const qNorm = normalizeQ(state.question);
-        if (qNorm.includes("donor") && hasOverlapSignal(qNorm) && hasMultiModelSignal(qNorm)) {
-          const alreadyHasOverlapEvidence = state.traceQueries.some(
-            (q) => q.intent === "training_donor_overlap_between_models" || q.intent === "donor_overlap_between_models" || q.intent === "set_operation"
-          );
-          if (!alreadyHasOverlapEvidence) {
-            const mentions = extractModelMentions(qNorm);
-            const split = extractSplitFromQuery(qNorm);
-            return {
-              nextToolUse: normalizeToolUse("donor_overlap_between_models", {
-                modelAId: mentions[0],
-                modelBId: mentions[1],
-                splitA: split,
-                splitB: split,
-              }, state.step + 1),
-            };
-          }
         }
 
         addTrace({ kind:"step", icon:"🗺️", label:`LangGraph plan step ${state.step + 1}`, detail:"Selecting next tool action..." });
