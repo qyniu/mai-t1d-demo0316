@@ -153,9 +153,26 @@ function queryGraph(intent, params) {
     });
     return sampleIds;
   };
-  const donorIdsForDatasetNode = (datasetNodeId) => {
+  const donorIdsForDatasetNode = (datasetNodeId, splitHint = "") => {
+    const split = normalizeSplit(splitHint || "");
     const donorIds = new Set();
-    sampleIdsForDatasetNode(datasetNodeId).forEach((sampleId) => {
+    let effectiveDatasetIds = [datasetNodeId];
+    const childSplitIds = EDGES
+      .filter((e) => e.label === "DERIVED_FROM" && edgeSrcId(e) === datasetNodeId)
+      .map((e) => edgeTgtId(e));
+    if (childSplitIds.length) {
+      const matched = childSplitIds.filter((cid) => {
+        const id = String(cid || "").toLowerCase();
+        if (split === "evaluation") return id.includes("__evaluation");
+        return id.includes("__training");
+      });
+      effectiveDatasetIds = matched.length ? matched : childSplitIds;
+    }
+    const sampleIds = new Set();
+    effectiveDatasetIds.forEach((dsId) => {
+      sampleIdsForDatasetNode(dsId).forEach((sid) => sampleIds.add(sid));
+    });
+    sampleIds.forEach((sampleId) => {
       const donorId = donorIdFromSampleId(sampleId);
       if (donorId) donorIds.add(donorId);
     });
@@ -178,6 +195,33 @@ function queryGraph(intent, params) {
       donorIdsForDatasetNode(dsId).forEach((d) => donorIds.add(d));
     });
     return donorIds;
+  };
+  const donorIdsForScope = (scopeTypeRaw = "", scopeRef = "", splitType = "training") => {
+    const scopeType = String(scopeTypeRaw || "").toLowerCase();
+    const out = new Set();
+    if (scopeType === "model") {
+      const modelNode = resolveNode(scopeRef, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === scopeRef);
+      if (modelNode) donorIdsForModelSplit(modelNode.id, splitType).forEach((d) => out.add(d));
+      return out;
+    }
+    if (scopeType === "modality") {
+      datasetIdsForModalityAndSplit(scopeRef, splitType).forEach((dsId) => {
+        donorIdsForDatasetNode(dsId, splitType).forEach((d) => out.add(d));
+      });
+      return out;
+    }
+    if (scopeType === "dataset") {
+      const dsNode = resolveNode(scopeRef, ["ProcessedData"]) || NODES.find((n) => n.id === scopeRef);
+      if (dsNode) donorIdsForDatasetNode(dsNode.id, splitType).forEach((d) => out.add(d));
+      return out;
+    }
+    if (scopeType === "donor_set") {
+      asArray(scopeRef).forEach((id) => {
+        if (donorNodeIds.has(String(id || "").trim())) out.add(String(id || "").trim());
+      });
+      return out;
+    }
+    return out;
   };
   const ratio = (numerator, denominator) => (denominator ? numerator / denominator : 0);
   const parseDate = (raw) => {
@@ -206,6 +250,48 @@ function queryGraph(intent, params) {
       if (qHas(q, key)) return modalityToDatasetIds[key];
     }
     return [];
+  };
+  const datasetSplitTag = (datasetNodeId = "") => {
+    const id = String(datasetNodeId || "").toLowerCase();
+    if (id.includes("__training")) return "training";
+    if (id.includes("__evaluation")) return "evaluation";
+    return "";
+  };
+  const datasetIdsForModalityAndSplit = (modalityRaw = "", splitRaw = "training") => {
+    const split = normalizeSplit(splitRaw);
+    const modalityQ = String(modalityRaw || "").trim();
+    const mappedParents = resolveModalityDatasetIds(modalityQ);
+    const out = new Set();
+
+    const pushSplitChildren = (parentId) => {
+      const childIds = EDGES
+        .filter((e) => e.label === "DERIVED_FROM" && edgeSrcId(e) === parentId)
+        .map((e) => edgeTgtId(e));
+      if (!childIds.length) {
+        out.add(parentId);
+        return;
+      }
+      const splitChildren = childIds.filter((cid) => datasetSplitTag(cid) === split);
+      if (splitChildren.length) splitChildren.forEach((x) => out.add(x));
+      else childIds.forEach((x) => out.add(x));
+    };
+
+    mappedParents.forEach((pid) => pushSplitChildren(pid));
+    if (out.size) return [...out];
+
+    // Generic fallback: fuzzy match ProcessedData labels by modality text.
+    const q = normalizeSearchText(modalityQ);
+    const candidates = NODES
+      .filter((n) => String(n.type) === "ProcessedData")
+      .filter((n) => {
+        const lbl = normalizeSearchText(labelSingleLine(n.label));
+        return q && (lbl.includes(q) || q.includes(lbl));
+      });
+    candidates.forEach((n) => {
+      const tag = datasetSplitTag(n.id);
+      if (!tag || tag === split) out.add(n.id);
+    });
+    return [...out];
   };
   const normalizeModelRef = (raw = "") => {
     const s = String(raw || "").trim().toLowerCase();
@@ -824,6 +910,116 @@ function queryGraph(intent, params) {
         },
       };
     }
+    case "embedding_leakage_between_models": {
+      const sourceModelId = params.sourceModelId || "";
+      const targetModelId = params.targetModelId || "";
+      const modelAId = params.modelAId || "";
+      const modelBId = params.modelBId || "";
+      const sourceSplit = normalizeSplit(params.sourceSplit || params.trainingSplit || "training");
+      const targetTrainSplit = normalizeSplit(params.targetTrainSplit || "training");
+      const targetUseSplit = normalizeSplit(params.targetUseSplit || params.targetSplit || "evaluation");
+      const targetUseEdge = targetUseSplit === "evaluation" ? "EVALUATED_ON" : "TRAINED_ON";
+      const requireUsage = params.requireEmbeddingUsage !== false;
+
+      const pairList = [];
+      if (sourceModelId && targetModelId) {
+        pairList.push({ sourceModelId, targetModelId });
+      } else if (modelAId && modelBId) {
+        pairList.push({ sourceModelId: modelAId, targetModelId: modelBId });
+        pairList.push({ sourceModelId: modelBId, targetModelId: modelAId });
+      }
+      if (!pairList.length) {
+        return { rows: [], summary: { found: false, reason: "no_model_pair" } };
+      }
+
+      const outRows = [];
+      const directionSummaries = [];
+      pairList.forEach(({ sourceModelId: sMid, targetModelId: tMid }) => {
+        const sNode = resolveNode(sMid, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === sMid);
+        const tNode = resolveNode(tMid, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === tMid);
+        if (!sNode || !tNode) return;
+
+        const sourceTrainingDonors = donorIdsForModelSplit(sNode.id, sourceSplit);
+        const targetTrainingDonors = donorIdsForModelSplit(tNode.id, targetTrainSplit);
+        const sourceEmbeddings = EDGES
+          .filter((e) => e.label === "EMBEDDED_BY" && edgeTgtId(e) === sNode.id)
+          .map((e) => edgeSrcId(e));
+
+        const embeddingsUsedByTarget = sourceEmbeddings.filter((embId) =>
+          EDGES.some((e) => e.label === targetUseEdge && edgeSrcId(e) === embId && edgeTgtId(e) === tNode.id)
+        );
+        const candidateEmbeddings = requireUsage ? embeddingsUsedByTarget : sourceEmbeddings;
+        if (!candidateEmbeddings.length) {
+          directionSummaries.push({
+            sourceModelId: sNode.id,
+            sourceModelLabel: labelSingleLine(sNode.label),
+            targetModelId: tNode.id,
+            targetModelLabel: labelSingleLine(tNode.label),
+            sourceEmbeddingCount: sourceEmbeddings.length,
+            embeddingsUsedByTargetCount: embeddingsUsedByTarget.length,
+            embeddingDonors: 0,
+            leakageDonors: 0,
+          });
+          return;
+        }
+
+        const sourceDatasetIds = new Set();
+        candidateEmbeddings.forEach((embId) => {
+          EDGES
+            .filter((e) => e.label === "DERIVED_FROM" && edgeTgtId(e) === embId)
+            .forEach((e) => sourceDatasetIds.add(edgeSrcId(e)));
+        });
+        const embeddingDonorIds = new Set();
+        [...sourceDatasetIds].forEach((dsId) => {
+          donorIdsForDatasetNode(dsId).forEach((d) => embeddingDonorIds.add(d));
+        });
+
+        const leakageDonorIds = [...embeddingDonorIds]
+          .filter((d) => sourceTrainingDonors.has(d) && targetTrainingDonors.has(d))
+          .sort();
+        leakageDonorIds.forEach((id) => {
+          const dn = NODES.find((n) => n.id === id);
+          outRows.push({
+            id,
+            label: labelSingleLine(dn?.label || id),
+            sourceModelId: sNode.id,
+            sourceModelLabel: labelSingleLine(sNode.label),
+            targetModelId: tNode.id,
+            targetModelLabel: labelSingleLine(tNode.label),
+            targetUsageSplit: targetUseSplit,
+          });
+        });
+        directionSummaries.push({
+          sourceModelId: sNode.id,
+          sourceModelLabel: labelSingleLine(sNode.label),
+          targetModelId: tNode.id,
+          targetModelLabel: labelSingleLine(tNode.label),
+          sourceEmbeddingCount: sourceEmbeddings.length,
+          embeddingsUsedByTargetCount: embeddingsUsedByTarget.length,
+          embeddingDonors: embeddingDonorIds.size,
+          leakageDonors: leakageDonorIds.length,
+        });
+      });
+
+      const uniqueRowsMap = new Map();
+      outRows.forEach((r) => {
+        const key = `${r.id}:${r.sourceModelId}:${r.targetModelId}`;
+        if (!uniqueRowsMap.has(key)) uniqueRowsMap.set(key, r);
+      });
+      const uniqueRows = [...uniqueRowsMap.values()].sort((a, b) => a.label.localeCompare(b.label));
+      return {
+        rows: uniqueRows,
+        summary: {
+          found: uniqueRows.length > 0,
+          sourceSplit,
+          targetTrainSplit,
+          targetUseSplit,
+          directionCount: directionSummaries.length,
+          directions: directionSummaries,
+          leakageDonorCount: uniqueRows.length,
+        },
+      };
+    }
     case "train_eval_distribution_drift": {
       const modelId = params.modelId || "model_genomic";
       const trainingDonors = donorIdsForModelSplit(modelId, "training");
@@ -915,6 +1111,22 @@ function queryGraph(intent, params) {
         parentDatasets: [...r.parentDatasets],
         impactedSampleCount: r.sampleIds.size,
       }));
+      const impactedDatasetIds = new Set();
+      impactedModels.forEach((m) => m.parentDatasets.forEach((dsId) => impactedDatasetIds.add(dsId)));
+      const inferModality = (datasetNode) => {
+        const d = datasetNode?.detail || {};
+        const fromDetail =
+          d.modality || d.Modality || d["Data modality"] || d.DatasetType || d.dataset_type || "";
+        if (String(fromDetail || "").trim()) return String(fromDetail).trim();
+        const lbl = labelSingleLine(datasetNode?.label || "");
+        const m = lbl.match(/^(.*?)\s+Dataset\s+v/i);
+        return m ? m[1].trim() : (lbl || "Unknown");
+      };
+      const impactedDatasetRows = [...impactedDatasetIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label), modality: inferModality(n) }));
+      const impactedModalities = [...new Set(impactedDatasetRows.map((x) => x.modality).filter(Boolean))].sort();
       const impactedModelIds = new Set(impactedModels.map((m) => m.modelId));
 
       const impactedFineTunedModelIds = new Set();
@@ -935,6 +1147,10 @@ function queryGraph(intent, params) {
       });
 
       const allImpactedModelIds = new Set([...impactedModelIds, ...impactedFineTunedModelIds]);
+      const allImpactedModels = [...allImpactedModelIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label), type: n.type }));
       const impactedTasks = EDGES
         .filter((e) => e.label === "ENABLES" && allImpactedModelIds.has(edgeSrcId(e)))
         .map((e) => NODES.find((n) => n.id === edgeTgtId(e)))
@@ -963,7 +1179,11 @@ function queryGraph(intent, params) {
           donorSampleCount: totalSamples,
           impactedSampleCount,
           impactedSampleRatio: ratio(impactedSampleCount, totalSamples),
+          impactedDatasetCount: impactedDatasetIds.size,
+          impactedDatasets: impactedDatasetRows,
+          impactedModalities,
           impactedModelCount: allImpactedModelIds.size,
+          impactedModels: allImpactedModels.map((m) => m.label),
           impactedTaskCount: impactedTasks.length,
           impactedTasks,
           predictionShiftEstimate,
@@ -1222,6 +1442,20 @@ function queryGraph(intent, params) {
         .map((id) => NODES.find((n) => n.id === id))
         .filter(Boolean)
         .map((n) => ({ id: n.id, label: labelSingleLine(n.label) }));
+      const inferModality = (datasetNode) => {
+        const d = datasetNode?.detail || {};
+        const fromDetail =
+          d.modality || d.Modality || d["Data modality"] || d.DatasetType || d.dataset_type || "";
+        if (String(fromDetail || "").trim()) return String(fromDetail).trim();
+        const lbl = labelSingleLine(datasetNode?.label || "");
+        const m = lbl.match(/^(.*?)\s+Dataset\s+v/i);
+        return m ? m[1].trim() : (lbl || "Unknown");
+      };
+      const datasetRows = [...datasetIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({ id: n.id, label: labelSingleLine(n.label), modality: inferModality(n) }));
+      const impactedModalities = [...new Set(datasetRows.map((d) => d.modality).filter(Boolean))].sort();
       const taskRows = [...taskIds]
         .map((id) => NODES.find((n) => n.id === id))
         .filter(Boolean)
@@ -1235,6 +1469,8 @@ function queryGraph(intent, params) {
           reachedCount: rows.length,
           sampleCount: sampleIds.size,
           datasetCount: datasetIds.size,
+          impactedDatasets: datasetRows,
+          impactedModalities,
           modelCount: modelIds.size,
           taskCount: taskRows.length,
           impactedModels: modelRows.map((m) => m.label),
@@ -1314,7 +1550,7 @@ function queryGraph(intent, params) {
           return out;
         }
         if (String(node.type) === "ProcessedData") {
-          donorIdsForDatasetNode(nodeId).forEach((d) => out.add(d));
+          donorIdsForDatasetNode(nodeId, normalizedSplit).forEach((d) => out.add(d));
           return out;
         }
         if (String(node.type) === "RawData") {
@@ -1327,7 +1563,7 @@ function queryGraph(intent, params) {
           const otherId = edgeSrcId(e) === nodeId ? edgeTgtId(e) : edgeSrcId(e);
           const otherNode = NODES.find((n) => n.id === otherId);
           if (!otherNode) return;
-          if (String(otherNode.type) === "ProcessedData") donorIdsForDatasetNode(otherId).forEach((d) => out.add(d));
+          if (String(otherNode.type) === "ProcessedData") donorIdsForDatasetNode(otherId, normalizedSplit).forEach((d) => out.add(d));
           if (String(otherNode.type) === "Model" || String(otherNode.type) === "FineTunedModel") {
             donorIdsForModelSplit(otherId, normalizedSplit).forEach((d) => out.add(d));
           }
@@ -1391,6 +1627,34 @@ function queryGraph(intent, params) {
         if (modelNode) {
           donorIds = [...donorIdsForModelSplit(modelNode.id, normalizedSplit)];
         }
+      }
+      if (!donorIds.length) {
+        const datasetRef = params.datasetId || params.dataset || params.datasetQuery || params.query || "";
+        const datasetNode =
+          resolveNode(datasetRef, ["ProcessedData"]) ||
+          resolveNode(params.modality, ["ProcessedData"]) ||
+          null;
+        const modality = params.modality || params.datasetType || datasetRef || "";
+        const splitDatasetIds = new Set();
+        if (datasetNode?.id) {
+          if (datasetSplitTag(datasetNode.id) === normalizedSplit) {
+            splitDatasetIds.add(datasetNode.id);
+          } else {
+            const childIds = EDGES
+              .filter((e) => e.label === "DERIVED_FROM" && edgeSrcId(e) === datasetNode.id)
+              .map((e) => edgeTgtId(e));
+            if (childIds.length) {
+              childIds
+                .filter((cid) => datasetSplitTag(cid) === normalizedSplit)
+                .forEach((cid) => splitDatasetIds.add(cid));
+            } else {
+              splitDatasetIds.add(datasetNode.id);
+            }
+          }
+        }
+        datasetIdsForModalityAndSplit(modality, normalizedSplit).forEach((id) => splitDatasetIds.add(id));
+        [...splitDatasetIds].forEach((dsId) => donorIdsForDatasetNode(dsId).forEach((d) => donorIds.push(d)));
+        donorIds = [...new Set(donorIds)];
       }
       const donorNodesForCalc = donorIds
         .map((id) => NODES.find((n) => n.id === id))
@@ -1477,6 +1741,283 @@ function queryGraph(intent, params) {
         },
       };
     }
+    case "reclassification_distribution_impact": {
+      const split = normalizeSplit(params.split || "training");
+      const scopeType = String(params.scopeType || (params.modelId ? "model" : (params.modality ? "modality" : "model"))).toLowerCase();
+      const scopeRef = params.scopeRef || params.modelId || params.modality || params.datasetId || "";
+
+      const parseReclassifications = () => {
+        const out = {};
+        if (params.reclassifications && typeof params.reclassifications === "object" && !Array.isArray(params.reclassifications)) {
+          Object.entries(params.reclassifications).forEach(([k, v]) => {
+            const code = normalizeDonorCode(k);
+            if (!code) return;
+            out[code] = String(v || "").trim();
+          });
+        }
+        if (Array.isArray(params.reclassificationList)) {
+          params.reclassificationList.forEach((item) => {
+            const code = normalizeDonorCode(item?.donorCode || item?.donor || item?.id || "");
+            const stage = String(item?.to || item?.newStage || item?.diagnosis || item?.value || "").trim();
+            if (code && stage) out[code] = stage;
+          });
+        }
+        const rangeStart = normalizeDonorCode(params.rangeStart || params.startDonor || "");
+        const rangeEnd = normalizeDonorCode(params.rangeEnd || params.endDonor || "");
+        const rangeTo = String(params.rangeTo || params.toStage || "").trim();
+        if (rangeStart && rangeEnd && rangeTo) {
+          const a = Number(rangeStart.split("-")[1]);
+          const b = Number(rangeEnd.split("-")[1]);
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          for (let i = lo; i <= hi; i += 1) {
+            out[`HPAP-${String(i).padStart(3, "0")}`] = rangeTo;
+          }
+        }
+        return out;
+      };
+
+      const reclassifications = parseReclassifications();
+      const donorIds = [...donorIdsForScope(scopeType, scopeRef, split)];
+      const donors = donorIds
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean);
+      if (!donors.length) {
+        return {
+          rows: [],
+          summary: { found: false, scopeType, scopeRef: String(scopeRef || ""), split, reclassificationCount: Object.keys(reclassifications).length },
+        };
+      }
+
+      const beforeCounts = { T1D: 0, ND: 0, "AAb+": 0, T2D: 0, Unknown: 0 };
+      const afterCounts = { T1D: 0, ND: 0, "AAb+": 0, T2D: 0, Unknown: 0 };
+      const rows = donors.map((dn) => {
+        const code = String(labelSingleLine(dn.label)).toUpperCase();
+        const beforeTag = diseaseTagFromDonor(dn);
+        const afterTag = diseaseTagFromDonor(dn, reclassifications);
+        bumpBucket(beforeCounts, beforeTag);
+        bumpBucket(afterCounts, afterTag);
+        return {
+          id: dn.id,
+          donorCode: code,
+          beforeDiagnosis: beforeTag,
+          afterDiagnosis: afterTag,
+          changed: beforeTag !== afterTag,
+          overrideApplied: Boolean(reclassifications[code]),
+        };
+      });
+      const inScopeOverrideCount = rows.filter((r) => r.overrideApplied).length;
+      const changedCount = rows.filter((r) => r.changed).length;
+      const total = donors.length;
+      const beforeT1D = beforeCounts.T1D || 0;
+      const beforeND = beforeCounts.ND || 0;
+      const afterT1D = afterCounts.T1D || 0;
+      const afterND = afterCounts.ND || 0;
+      const beforeT1DRatio = ratio(beforeT1D, total);
+      const beforeNDRatio = ratio(beforeND, total);
+      const afterT1DRatio = ratio(afterT1D, total);
+      const afterNDRatio = ratio(afterND, total);
+      const beforeGap = Math.abs(beforeT1DRatio - beforeNDRatio);
+      const afterGap = Math.abs(afterT1DRatio - afterNDRatio);
+      const balanceTrend =
+        afterGap < beforeGap - 0.05
+          ? "more_balanced"
+          : afterGap > beforeGap + 0.05
+            ? "more_imbalanced"
+            : "similar_balance";
+      const maxClassRatioAfter = Math.max(
+        afterT1DRatio,
+        afterNDRatio,
+        ratio(afterCounts.T2D || 0, total),
+        ratio(afterCounts["AAb+"] || 0, total)
+      );
+      const riskLevel =
+        Math.abs(afterT1DRatio - beforeT1DRatio) >= 0.15 || maxClassRatioAfter >= 0.75
+          ? "high"
+          : Math.abs(afterT1DRatio - beforeT1DRatio) >= 0.08 || maxClassRatioAfter >= 0.6
+            ? "medium"
+            : "low";
+
+      // Build impact surface for changed donors: donor -> sample -> dataset -> model -> downstream task.
+      const changedDonorIds = new Set(rows.filter((r) => r.changed).map((r) => r.id));
+      const changedSampleIds = new Set();
+      changedDonorIds.forEach((did) => {
+        EDGES
+          .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === did)
+          .forEach((e) => {
+            const sid = edgeTgtId(e);
+            const sn = NODES.find((n) => n.id === sid);
+            if (sn && String(sn.type) === "RawData") changedSampleIds.add(sid);
+          });
+      });
+
+      const scopeDatasetIds = new Set();
+      if (scopeType === "model") {
+        const mNode = resolveNode(scopeRef, ["Model", "FineTunedModel"]) || NODES.find((n) => n.id === scopeRef);
+        if (mNode) {
+          EDGES
+            .filter((e) => edgeTgtId(e) === mNode.id && (e.label === "TRAINED_ON" || e.label === "EVALUATED_ON"))
+            .forEach((e) => {
+              const useSplit = e.label === "TRAINED_ON" ? "training" : "evaluation";
+              if (useSplit !== split) return;
+              scopeDatasetIds.add(edgeSrcId(e));
+            });
+        }
+      } else if (scopeType === "modality") {
+        datasetIdsForModalityAndSplit(scopeRef, split).forEach((id) => scopeDatasetIds.add(id));
+      } else if (scopeType === "dataset") {
+        const ds = resolveNode(scopeRef, ["ProcessedData"]) || NODES.find((n) => n.id === scopeRef);
+        if (ds) {
+          if (datasetSplitTag(ds.id) === split) scopeDatasetIds.add(ds.id);
+          EDGES
+            .filter((e) => e.label === "DERIVED_FROM" && edgeSrcId(e) === ds.id)
+            .map((e) => edgeTgtId(e))
+            .filter((id) => datasetSplitTag(id) === split)
+            .forEach((id) => scopeDatasetIds.add(id));
+        }
+      }
+
+      const impactedDatasetIds = new Set();
+      changedSampleIds.forEach((sid) => {
+        EDGES
+          .filter((e) => e.label === "HAD_MEMBER" && edgeTgtId(e) === sid)
+          .forEach((e) => {
+            const dsId = edgeSrcId(e);
+            const dsNode = NODES.find((n) => n.id === dsId);
+            if (!dsNode || String(dsNode.type) !== "ProcessedData") return;
+            if (scopeDatasetIds.size && !scopeDatasetIds.has(dsId)) return;
+            impactedDatasetIds.add(dsId);
+          });
+      });
+
+      const impactedModelMap = new Map();
+      impactedDatasetIds.forEach((dsId) => {
+        EDGES
+          .filter((e) => edgeSrcId(e) === dsId && (e.label === "TRAINED_ON" || e.label === "EVALUATED_ON"))
+          .forEach((e) => {
+            const useSplit = e.label === "TRAINED_ON" ? "training" : "evaluation";
+            const mId = edgeTgtId(e);
+            const mn = NODES.find((n) => n.id === mId);
+            if (!mn || !["Model", "FineTunedModel"].includes(String(mn.type))) return;
+            if (!impactedModelMap.has(mId)) {
+              impactedModelMap.set(mId, {
+                modelId: mId,
+                label: labelSingleLine(mn.label),
+                type: mn.type,
+                exposureSplits: new Set(),
+              });
+            }
+            impactedModelMap.get(mId).exposureSplits.add(useSplit);
+          });
+      });
+
+      // Include downstream fine-tuned models derived from directly impacted models.
+      let expandFt = true;
+      while (expandFt) {
+        expandFt = false;
+        EDGES
+          .filter((e) => e.label === "FINETUNED_ON")
+          .forEach((e) => {
+            const ftId = edgeSrcId(e);
+            const baseId = edgeTgtId(e);
+            const ftn = NODES.find((n) => n.id === ftId);
+            if (!ftn || !["Model", "FineTunedModel"].includes(String(ftn.type))) return;
+            if (!impactedModelMap.has(baseId) || impactedModelMap.has(ftId)) return;
+            impactedModelMap.set(ftId, {
+              modelId: ftId,
+              label: labelSingleLine(ftn.label),
+              type: ftn.type,
+              exposureSplits: new Set(["derived"]),
+            });
+            expandFt = true;
+          });
+      }
+
+      const impactedTaskMap = new Map();
+      [...impactedModelMap.keys()].forEach((mId) => {
+        EDGES
+          .filter((e) => e.label === "ENABLES" && edgeSrcId(e) === mId)
+          .forEach((e) => {
+            const tid = edgeTgtId(e);
+            const tn = NODES.find((n) => n.id === tid);
+            if (!tn || String(tn.type) !== "DownstreamTask") return;
+            impactedTaskMap.set(tid, { id: tid, label: labelSingleLine(tn.label) });
+          });
+      });
+
+      const inferModality = (datasetNode) => {
+        const d = datasetNode?.detail || {};
+        const fromDetail =
+          d.modality || d.Modality || d["Data modality"] || d.DatasetType || d.dataset_type || "";
+        if (String(fromDetail || "").trim()) return String(fromDetail).trim();
+        const lbl = labelSingleLine(datasetNode?.label || "");
+        const m = lbl.match(/^(.*?)\s+Dataset\s+v/i);
+        return m ? m[1].trim() : (lbl || "Unknown");
+      };
+      const impactedDatasets = [...impactedDatasetIds]
+        .map((id) => NODES.find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => ({
+          id: n.id,
+          label: labelSingleLine(n.label),
+          modality: inferModality(n),
+        }));
+      const impactedModalities = [...new Set(impactedDatasets.map((d) => d.modality).filter(Boolean))].sort();
+      const impactedModels = [...impactedModelMap.values()].map((m) => ({
+        modelId: m.modelId,
+        label: m.label,
+        type: m.type,
+        exposureSplits: [...m.exposureSplits],
+      }));
+      const impactedTasks = [...impactedTaskMap.values()];
+
+      return {
+        rows: rows.sort((a, b) => a.donorCode.localeCompare(b.donorCode)),
+        summary: {
+          found: true,
+          scopeType,
+          scopeRef: String(scopeRef || ""),
+          split,
+          donorCount: total,
+          requestedReclassificationCount: Object.keys(reclassifications).length,
+          inScopeOverrideCount,
+          changedCount,
+          before: {
+            counts: beforeCounts,
+            t1dRatio: beforeT1DRatio,
+            ndRatio: beforeNDRatio,
+            t1dToNd: `${beforeT1D}:${beforeND}`,
+          },
+          after: {
+            counts: afterCounts,
+            t1dRatio: afterT1DRatio,
+            ndRatio: afterNDRatio,
+            t1dToNd: `${afterT1D}:${afterND}`,
+          },
+          shift: {
+            t1dDelta: afterT1D - beforeT1D,
+            ndDelta: afterND - beforeND,
+            t1dRatioDelta: afterT1DRatio - beforeT1DRatio,
+            ndRatioDelta: afterNDRatio - beforeNDRatio,
+          },
+          balance: {
+            beforeGap,
+            afterGap,
+            trend: balanceTrend,
+            riskLevel,
+          },
+          impactedSampleCount: changedSampleIds.size,
+          impactedDatasetCount: impactedDatasets.length,
+          impactedDatasets,
+          impactedModalities,
+          impactedModelCount: impactedModels.length,
+          impactedModels,
+          impactedTaskCount: impactedTasks.length,
+          impactedTasks,
+          appliedOverrides: reclassifications,
+        },
+      };
+    }
     case "set_operation": {
       const operator = String(params.operator || "intersect").toLowerCase();
       const leftIds = asArray(params.leftIds).map((x) => String(x || "").trim()).filter(Boolean);
@@ -1554,11 +2095,22 @@ Graph structure hints:
 - For questions like "哪些donor同时出现在A和B的训练集中":
   - Prefer donor_overlap_between_models with splitA/splitB set to training.
   - Return donor list + overlap count + each model donor count.
+- For questions asking training donors of one/more models:
+  - Prefer training_donors_by_models with explicit modelIds.
+  - Donor aggregation is UNIQUE UNION across all training input datasets linked to that model.
+- For embedding leakage questions:
+  - Prefer embedding_leakage_between_models.
+  - Use sourceModelId/targetModelId when direction is explicit; otherwise use modelAId/modelBId.
+-For reclassification what-if drift questions:
+  - Prefer reclassification_distribution_impact with scopeType=model|modality and split.
+  - Provide reclassifications as donorCode -> new diagnosis/stage.
 
 Available intents:
 - search_nodes
 - get_neighbors
 - extract_donors
+- training_donors_by_models
+- training_donor_overlap_between_models
 - set_operation
 - donor_overlap_between_models
 - node_detail
@@ -1569,6 +2121,8 @@ Available intents:
 - downstream_tasks
 - qc_pipeline_for_model_modality
 - qc_pipeline_owner
+- embedding_leakage_between_models
+- reclassification_distribution_impact
 
 Workflow:
 1) Plan multi-step retrieval from graph structure.
@@ -1587,6 +2141,8 @@ const INTENT_ENUM = [
   "list_nodes_by_type",
   "get_neighbors",
   "extract_donors",
+  "training_donors_by_models",
+  "training_donor_overlap_between_models",
   "donor_attribute_ratio",
   "set_operation",
   "donor_overlap_between_models",
@@ -1598,6 +2154,8 @@ const INTENT_ENUM = [
   "downstream_tasks",
   "qc_pipeline_for_model_modality",
   "qc_pipeline_owner",
+  "embedding_leakage_between_models",
+  "reclassification_distribution_impact",
   "impact_downstream",
 ];
 
@@ -1611,14 +2169,11 @@ const AGENT_TOOLS = [
 ];
 
 const SUGGESTIONS = [
-  "What datasets trained model scFM-v1?",
-  "Which models are downstream of scRNA v1.2?",
-  "Is HPAP-088 WGS data available for use?",
+  "Which models are downstream of HPAP-002?",
+  "Which donors appear in both the Genomic FM and Spatial FM training sets?",
+  "Among donors used to train both the Genomic FM and Spatial FM, what is the proportion of T1D patients?",
   "What QC pipeline produced scRNA for scFM-v1?",
-  "What governance events occurred in 2025-Q2?",
-  "Which models need re-eval after HPAP-016 re-QC?",
-  "Who is responsible for QC pipeline scRNA-v4?",
-  "Which Vanderbilt datasets were used post-2024?",
+  "Who is responsible for the scRNA QC pipeline v1?",
 ];
 
 const normalizeQ = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -1953,6 +2508,8 @@ Rules:
 - For node-information questions (owner/contact/email/path/version/status/responsible), do NOT stop at search_nodes; follow with node_detail on the best matched node before answering.
 - Use linked_entities as a high-priority grounding hint for canonical IDs when provided.
 - For donor-attribute statistics questions (e.g., T1D/ND/White count or ratio), use donor_attribute_ratio after obtaining donor set evidence.
+- For embedding leakage / cross-model embedding reuse questions, use embedding_leakage_between_models.
+- For hypothetical donor reclassification impact questions ("if HPAP-xxx becomes T1D"), use reclassification_distribution_impact.
 - For inventory/list questions ("what raw data/datasets/models exist"), prefer list_nodes_by_type first, then drill down.
 - For change-impact questions ("X changed, what downstream models/data are impacted"), use impact_downstream first.
 - Use domain intents only when they directly and fully match the question.
@@ -1970,6 +2527,17 @@ You are the answer node in a LangGraph-style governance agent.
 Use only provided tool evidence to answer.
 If evidence is insufficient, explicitly say what is missing in the current graph.
 Do not describe internal reasoning steps.
+
+When evidence includes "reclassification_distribution_impact":
+- Prefer an analysis-style answer over rigid template text.
+- Clearly explain:
+  1) before distribution (counts + ratios),
+  2) after distribution (counts + ratios),
+  3) concrete deltas (count and percentage-point),
+  4) why requested overrides may be larger than actually changed donors.
+- Add a balance-focused interpretation (e.g., more balanced vs more imbalanced).
+- If evidence includes impacted modalities/models/tasks, include a prioritized adjustment list.
+- If user asks in Chinese, answer in Chinese; if user asks in English, answer in English.
 `;
 const extractModelMentions = (q) => {
   return linkModelEntities(q).map((x) => x.id);
@@ -2001,6 +2569,8 @@ const parseInventoryRequest = (q = "") => {
   const s = normalizeQ(q);
   const isPipelineQuestion = qHasAny(s, ["pipeline", "qc", "produced", "生成", "流程"]);
   if (isPipelineQuestion) return null;
+  const isDonorQuestion = qHasAny(s, ["donor", "donors", "供体", "训练集", "training set", "training donors"]);
+  if (isDonorQuestion) return null;
   const asksList = qHasAny(s, ["what", "which", "list", "哪些", "有哪些", "show", "列出"]);
   const nodeType = detectNodeTypeFromQuestion(s);
   const hasModelContext = qHasAny(s, ["model", "fm", "foundation model", "模型", "scfm", "genomic fm", "spatial fm", "protein fm"]);
@@ -2011,8 +2581,14 @@ const parseInventoryRequest = (q = "") => {
   const query = donorCode || (qHas(s, "hpap") ? "hpap" : "");
   return { nodeType, query };
 };
+
 const parseImpactRequest = (q = "") => {
   const s = normalizeQ(q);
+  const looksLikeReclassWhatIf =
+    qHasAny(s, ["if", "如果", "what if", "假如"]) &&
+    qHasAny(s, ["become", "变成", "reclass", "reclassification", "改成"]) &&
+    qHasAny(s, ["ratio", "比例", "distribution", "drift", "分布"]);
+  if (looksLikeReclassWhatIf) return null;
   const asksImpact = qHasAny(s, ["影响", "impact", "impacted", "downstream", "下游", "变更", "修改", "更新"]);
   if (!asksImpact) return null;
   const donorCode = normalizeDonorCode(q);
@@ -2027,13 +2603,22 @@ const parseDonorAttributeTargetFromQuestion = (q = "") => {
   const asksCount = qHasAny(s, ["how many", "count", "多少", "几位", "几人", "数量", "number of"]);
   const asksDistribution = qHasAny(s, ["distribution", "distributions", "composition", "breakdown", "分布", "构成", "组成"]);
   const asksDonor = qHasAny(s, ["donor", "donors", "供体"]);
+  const asksDatasetLike = qHasAny(s, ["dataset", "data", "modality", "数据集", "数据", "scrna", "single-cell", "single cell", "sc rna"]);
   const asksStats = asksRatio || asksCount || asksDistribution;
-  if (!asksStats || !asksDonor) return { needsAttributeStats: false, askType: "ratio" };
+  if (!asksStats || !(asksDonor || asksDatasetLike)) return { needsAttributeStats: false, askType: "ratio" };
   const askType = asksDistribution ? "distribution" : (asksCount && !asksRatio ? "count" : "ratio");
-  if (qHasAny(s, ["t1d", "t1dm"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "T1D" };
-  if (qHasAny(s, ["t2d", "t2dm"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "T2D" };
-  if (qHasAny(s, ["nd", "control", "normal"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "ND" };
-  if (qHasAny(s, ["aab", "aab+"])) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "AAb+" };
+  const hasT1D = qHasAny(s, ["t1d", "t1dm"]);
+  const hasT2D = qHasAny(s, ["t2d", "t2dm"]);
+  const hasND = qHasAny(s, ["nd", "control", "normal"]);
+  const hasAAb = qHasAny(s, ["aab", "aab+"]);
+  const diseaseSignalCount = [hasT1D, hasT2D, hasND, hasAAb].filter(Boolean).length;
+  if (diseaseSignalCount >= 2) {
+    return { needsAttributeStats: true, askType: "distribution", mode: "disease", targetValue: "" };
+  }
+  if (hasT1D) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "T1D" };
+  if (hasT2D) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "T2D" };
+  if (hasND) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "ND" };
+  if (hasAAb) return { needsAttributeStats: true, askType, mode: "disease", targetValue: "AAb+" };
   if (qHasAny(s, ["white", "caucasian", "白人", "白"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "White" };
   if (qHasAny(s, ["black", "african", "黑人", "黑"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "Black" };
   if (qHasAny(s, ["asian", "亚裔", "亚洲"])) return { needsAttributeStats: true, askType, mode: "ethnicity", targetValue: "Asian" };
@@ -2052,7 +2637,10 @@ const getForcedToolUses = (userMsg) => {
   return [];
 };
 
-const formatIntentAnswer = (intent, params, result) => {
+const hasCjk = (s = "") => /[\u3400-\u9FFF]/.test(String(s || ""));
+const formatIntentAnswer = (intent, params, result, context = {}) => {
+  const question = String(context?.question || "");
+  const preferEnglish = !hasCjk(question);
   const rows = result?.rows || [];
   if (
     !rows.length &&
@@ -2063,6 +2651,7 @@ const formatIntentAnswer = (intent, params, result) => {
     intent !== "qc_pipeline_for_model_modality" &&
     intent !== "models_need_reeval_after_donor_qc" &&
     intent !== "qc_pipeline_owner" &&
+    intent !== "reclassification_distribution_impact" &&
     intent !== "institution_datasets_used_after_year"
     && intent !== "impact_downstream"
   ) {
@@ -2149,6 +2738,33 @@ const formatIntentAnswer = (intent, params, result) => {
         `在 ${s.modelALabel} 和 ${s.modelBLabel}${same} 的 ${s.splitA || "training"} / ${s.splitB || "training"} 数据中，共有 ${s.overlapCount} 位 donor 重叠。`,
         `${s.modelALabel} 总 donor 数 ${s.modelADonorCount}，${s.modelBLabel} 总 donor 数 ${s.modelBDonorCount}。重叠占比为 ${pctA}%（相对模型A）和 ${pctB}%（相对模型B）。`,
         donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有重叠 donor。",
+      ].join("\n");
+    }
+    case "embedding_leakage_between_models": {
+      const s = result?.summary || {};
+      const dirs = Array.isArray(s.directions) ? s.directions : [];
+      if (!dirs.length) {
+        return preferEnglish
+          ? "No valid source/target model pair was found for embedding leakage analysis."
+          : "当前图中未找到可用于 embedding leakage 分析的模型对。";
+      }
+      if (preferEnglish) {
+        return [
+          `Potential cross-model embedding leakage donors: ${s.leakageDonorCount ?? rows.length}`,
+          `Target embedding usage split: ${s.targetUseSplit || "evaluation"}, source split: ${s.sourceSplit || "training"}, target-train split: ${s.targetTrainSplit || "training"}.`,
+          ...dirs.map((d) =>
+            `- ${d.sourceModelLabel} -> ${d.targetModelLabel}: embeddings=${d.sourceEmbeddingCount}, usedByTarget=${d.embeddingsUsedByTargetCount}, embeddingDonors=${d.embeddingDonors}, leakageDonors=${d.leakageDonors}`
+          ),
+          rows.length ? `Donors: ${rows.map((r) => r.label).join(", ")}` : "Donors: none",
+        ].join("\n");
+      }
+      return [
+        `潜在 cross-model embedding leakage donor 数：${s.leakageDonorCount ?? rows.length}`,
+        `目标模型使用 embedding 的 split：${s.targetUseSplit || "evaluation"}；source split：${s.sourceSplit || "training"}；target-train split：${s.targetTrainSplit || "training"}。`,
+        ...dirs.map((d) =>
+          `- ${d.sourceModelLabel} -> ${d.targetModelLabel}：embeddings=${d.sourceEmbeddingCount}，target 使用=${d.embeddingsUsedByTargetCount}，embedding donor=${d.embeddingDonors}，leakage donor=${d.leakageDonors}`
+        ),
+        rows.length ? `Donor 列表：${rows.map((r) => r.label).join(", ")}` : "Donor 列表：none",
       ].join("\n");
     }
     case "donor_overlap_between_models": {
@@ -2302,6 +2918,52 @@ const formatIntentAnswer = (intent, params, result) => {
         `Downstream tasks: ${tasks.length ? tasks.join(", ") : "none"}`,
       ].join("\n");
     }
+    case "reclassification_distribution_impact": {
+      const s = result?.summary || {};
+      if (!s.found) {
+        return preferEnglish
+          ? `No donors were found for scope ${s.scopeType || "unknown"} (${s.scopeRef || "n/a"}) with split=${s.split || "training"}.`
+          : `在作用域 ${s.scopeType || "unknown"}（${s.scopeRef || "n/a"}）和 split=${s.split || "training"} 下未找到 donor。`;
+      }
+      const beforeCounts = s.before?.counts || {};
+      const afterCounts = s.after?.counts || {};
+      const beforeComp = `T1D=${beforeCounts.T1D || 0}, ND=${beforeCounts.ND || 0}, T2D=${beforeCounts.T2D || 0}, AAb+=${beforeCounts["AAb+"] || 0}, Unknown=${beforeCounts.Unknown || 0}`;
+      const afterComp = `T1D=${afterCounts.T1D || 0}, ND=${afterCounts.ND || 0}, T2D=${afterCounts.T2D || 0}, AAb+=${afterCounts["AAb+"] || 0}, Unknown=${afterCounts.Unknown || 0}`;
+      const outsideScopeOverrides = Math.max(0, (s.requestedReclassificationCount || 0) - (s.inScopeOverrideCount || 0));
+      const modalities = (s.impactedModalities || []).slice(0, 20).join(", ") || "none";
+      const models = (s.impactedModels || []).map((x) => x.label || x).slice(0, 20).join(", ") || "none";
+      const tasks = (s.impactedTasks || []).map((x) => x.label || x).slice(0, 20).join(", ") || "none";
+      if (preferEnglish) {
+        return [
+          `Donor reclassification impact analysis (${s.scopeType}: ${s.scopeRef}, split=${s.split}):`,
+          `Scope donors: ${s.donorCount}; requested overrides: ${s.requestedReclassificationCount || 0}; matched in scope: ${s.inScopeOverrideCount || 0}; diagnosis changed: ${s.changedCount || 0}.`,
+          outsideScopeOverrides > 0
+            ? `Note: ${outsideScopeOverrides} requested donor(s) were outside this scope or split, so they did not affect this calculation.`
+            : `All requested donor overrides were within scope.`,
+          `Balance trend: ${s.balance?.trend || "unknown"} (risk=${s.balance?.riskLevel || "unknown"}).`,
+          `Before ratio (T1D:ND) = ${s.before?.t1dToNd || "0:0"} (T1D ${(100 * (s.before?.t1dRatio || 0)).toFixed(1)}%, ND ${(100 * (s.before?.ndRatio || 0)).toFixed(1)}%).`,
+          `Before composition: ${beforeComp}.`,
+          `After ratio  (T1D:ND) = ${s.after?.t1dToNd || "0:0"} (T1D ${(100 * (s.after?.t1dRatio || 0)).toFixed(1)}%, ND ${(100 * (s.after?.ndRatio || 0)).toFixed(1)}%).`,
+          `After composition: ${afterComp}.`,
+          `Shift summary: T1D delta ${s.shift?.t1dDelta || 0} (${(100 * (s.shift?.t1dRatioDelta || 0)).toFixed(1)} pp), ND delta ${s.shift?.ndDelta || 0} (${(100 * (s.shift?.ndRatioDelta || 0)).toFixed(1)} pp).`,
+          `Potential adjustment targets -> modalities: ${modalities}; models: ${models}; downstream tasks: ${tasks}.`,
+        ].join("\n");
+      }
+      return [
+        `donor 重分类后的分布影响分析（${s.scopeType}: ${s.scopeRef}, split=${s.split}）：`,
+        `作用域 donor 数：${s.donorCount}；请求重分类：${s.requestedReclassificationCount || 0}；作用域内命中：${s.inScopeOverrideCount || 0}；实际诊断改变：${s.changedCount || 0}。`,
+        outsideScopeOverrides > 0
+          ? `说明：有 ${outsideScopeOverrides} 个请求 donor 不在当前作用域/分割中，因此未计入本次变化。`
+          : `说明：所有请求 donor 都在当前作用域内。`,
+        `平衡性趋势：${s.balance?.trend || "unknown"}（风险等级=${s.balance?.riskLevel || "unknown"}）。`,
+        `重分类前 T1D:ND = ${s.before?.t1dToNd || "0:0"}（T1D ${(100 * (s.before?.t1dRatio || 0)).toFixed(1)}%，ND ${(100 * (s.before?.ndRatio || 0)).toFixed(1)}%）。`,
+        `重分类前构成：${beforeComp}。`,
+        `重分类后 T1D:ND = ${s.after?.t1dToNd || "0:0"}（T1D ${(100 * (s.after?.t1dRatio || 0)).toFixed(1)}%，ND ${(100 * (s.after?.ndRatio || 0)).toFixed(1)}%）。`,
+        `重分类后构成：${afterComp}。`,
+        `变化总结：T1D delta ${s.shift?.t1dDelta || 0}（${(100 * (s.shift?.t1dRatioDelta || 0)).toFixed(1)} pp），ND delta ${s.shift?.ndDelta || 0}（${(100 * (s.shift?.ndRatioDelta || 0)).toFixed(1)} pp）。`,
+        `建议优先复核 -> 受影响数据模态：${modalities}；受影响模型：${models}；下游任务：${tasks}。`,
+      ].join("\n");
+    }
     case "shared_validation_datasets_across_fms": {
       const s = result?.summary || {};
       return [
@@ -2334,9 +2996,24 @@ const formatIntentAnswer = (intent, params, result) => {
       if (!s.found) return `No matching entity was found for "${s.entity || params?.query || ""}" in current graph.`;
       const modelPreview = (s.impactedModels || []).slice(0, 12).join(", ");
       const taskPreview = (s.impactedTasks || []).slice(0, 12).join(", ");
+      const modalityPreview = (s.impactedModalities || []).slice(0, 20).join(", ");
+      const sampleCount = s.sampleCount ?? s.impactedSampleCount ?? 0;
+      const datasetCount = s.datasetCount ?? s.impactedDatasetCount ?? 0;
+      const modelCount = s.modelCount ?? s.impactedModelCount ?? 0;
+      const taskCount = s.taskCount ?? s.impactedTaskCount ?? 0;
+      if (preferEnglish) {
+        return [
+          `Downstream impact overview for changes to ${s.startLabel}:`,
+          `Impacted samples: ${sampleCount}, datasets: ${datasetCount}, models: ${modelCount}, downstream tasks: ${taskCount}.`,
+          `Impacted data modalities: ${modalityPreview || "none"}`,
+          `Impacted models: ${modelPreview || "none"}`,
+          `Impacted tasks: ${taskPreview || "none"}`,
+        ].join("\n");
+      }
       return [
         `${s.startLabel} 变更的下游影响概览：`,
-        `受影响样本 ${s.sampleCount ?? 0}，数据集 ${s.datasetCount ?? 0}，模型 ${s.modelCount ?? 0}，下游任务 ${s.taskCount ?? 0}。`,
+        `受影响样本 ${sampleCount}，数据集 ${datasetCount}，模型 ${modelCount}，下游任务 ${taskCount}。`,
+        `受影响数据模态：${modalityPreview || "none"}`,
         `受影响模型：${modelPreview || "none"}`,
         `受影响任务：${taskPreview || "none"}`,
       ].join("\n");

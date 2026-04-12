@@ -146,6 +146,43 @@ function AgentView({ p = false }) {
     const m = String(q || "").toLowerCase().match(/\bv\s*([0-9]+(?:\.[0-9]+)*)\b/);
     return m ? `v${m[1]}` : "";
   };
+  const isReclassificationWhatIfQuestion = (q = "") => {
+    const s = normalizeQ(q);
+    const hasIf = qHasAny(s, ["if", "如果", "假如", "what if"]);
+    const hasReclass = qHasAny(s, ["become", "变成", "reclass", "reclassification", "改成"]);
+    const hasRatioOrDrift = qHasAny(s, ["ratio", "比例", "distribution", "drift", "影响", "impact"]);
+    return hasIf && hasReclass && hasRatioOrDrift;
+  };
+  const parseReclassificationOverrides = (q = "") => {
+    const raw = String(q || "");
+    const upper = raw.toUpperCase();
+    const range = upper.match(/HPAP[-_\s]?(\d{1,3})\s*(?:TO|到|~|～|-)\s*HPAP[-_\s]?(\d{1,3})/);
+    const toT1D = /(?:BECOME|TO|变成|改成)\s*T1D/i.test(raw);
+    if (range && toT1D) {
+      return {
+        rangeStart: `HPAP-${String(Number(range[1])).padStart(3, "0")}`,
+        rangeEnd: `HPAP-${String(Number(range[2])).padStart(3, "0")}`,
+        rangeTo: "T1D",
+      };
+    }
+    return null;
+  };
+  const isEmbeddingLeakageQuestion = (q = "") => {
+    const s = normalizeQ(q);
+    const hasEmbedding = qHasAny(s, ["embedding", "embedded", "嵌入"]);
+    const hasLeakage = qHasAny(s, ["leakage", "data leakage", "交叉", "泄露", "泄漏", "cross-model", "cross model"]);
+    const hasModelContext = qHasAny(s, ["fm", "model", "foundation model", "模型"]);
+    return hasEmbedding && (hasLeakage || hasModelContext);
+  };
+  const isTrainingDonorListQuestion = (q = "", modelIds = []) => {
+    const s = normalizeQ(q);
+    const asksDonor = qHasAny(s, ["donor", "donors", "供体"]);
+    const asksTraining = qHasAny(s, ["training", "training set", "训练", "训练集"]);
+    const asksList = qHasAny(s, ["which", "what", "list", "有哪些", "哪些", "多少"]);
+    const hasModel = (Array.isArray(modelIds) && modelIds.length > 0) || qHasAny(s, ["fm", "model", "模型"]);
+    const asksOverlap = hasOverlapSignal(s);
+    return asksDonor && asksTraining && asksList && hasModel && !asksOverlap;
+  };
   const normalizeToolUse = (intent, params, idx=1, linkedEntities=null) => {
     const safeIntent = String(intent || "").trim();
     if (!INTENT_ENUM.includes(safeIntent)) return null;
@@ -289,6 +326,36 @@ function AgentView({ p = false }) {
         }
 
         const qNormEarly = normalizeQ(state.question);
+        const ratioTarget = parseDonorAttributeTargetFromQuestion(qNormEarly);
+        const linkedModelIds = Array.isArray(state.linkedEntities?.modelIds) ? state.linkedEntities.modelIds : [];
+        const mentionedModels = [...new Set(linkedModelIds.length ? linkedModelIds : extractModelMentions(qNormEarly))];
+        if (isReclassificationWhatIfQuestion(state.question)) {
+          const parsed = parseReclassificationOverrides(state.question);
+          const scopeModelId = mentionedModels[0] || "";
+          const modalityHint = extractModalityHint(state.question);
+          const scopeType = scopeModelId ? "model" : (modalityHint ? "modality" : "model");
+          const scopeRef = scopeModelId || modalityHint || "";
+          if (scopeRef && parsed) {
+            const already = (state.traceQueries || []).some((x) => x.intent === "reclassification_distribution_impact");
+            if (!already) {
+              return {
+                nextToolUse: normalizeToolUse(
+                  "reclassification_distribution_impact",
+                  {
+                    scopeType,
+                    scopeRef,
+                    split: detectSplitFromQuestion(state.question),
+                    rangeStart: parsed.rangeStart,
+                    rangeEnd: parsed.rangeEnd,
+                    rangeTo: parsed.rangeTo,
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+          }
+        }
         const impactReq = parseImpactRequest(state.question);
         if (impactReq && !(state.traceQueries || []).length) {
           return {
@@ -318,9 +385,49 @@ function AgentView({ p = false }) {
             ),
           };
         }
-        const ratioTarget = parseDonorAttributeTargetFromQuestion(qNormEarly);
-        const linkedModelIds = Array.isArray(state.linkedEntities?.modelIds) ? state.linkedEntities.modelIds : [];
-        const mentionedModels = [...new Set(linkedModelIds.length ? linkedModelIds : extractModelMentions(qNormEarly))];
+        if (isTrainingDonorListQuestion(state.question, mentionedModels)) {
+          if (mentionedModels.length >= 1) {
+            const split = detectSplitFromQuestion(state.question);
+            const already = (state.traceQueries || []).some(
+              (x) => x.intent === "training_donors_by_models" && (x.result?.rows?.length || 0) > 0
+            );
+            if (!already) {
+              return {
+                nextToolUse: normalizeToolUse(
+                  "training_donors_by_models",
+                  {
+                    modelIds: mentionedModels,
+                    split,
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+          }
+        }
+        if (isEmbeddingLeakageQuestion(state.question) && mentionedModels.length >= 2) {
+          const already = (state.traceQueries || []).some(
+            (x) => x.intent === "embedding_leakage_between_models" && (x.result?.summary?.directionCount || 0) > 0
+          );
+          if (!already) {
+            return {
+              nextToolUse: normalizeToolUse(
+                "embedding_leakage_between_models",
+                {
+                  modelAId: mentionedModels[0],
+                  modelBId: mentionedModels[1],
+                  sourceSplit: "training",
+                  targetTrainSplit: "training",
+                  targetUseSplit: detectSplitFromQuestion(state.question),
+                  requireEmbeddingUsage: true,
+                },
+                state.step + 1,
+                state.linkedEntities
+              ),
+            };
+          }
+        }
         if (isQcPipelineQuestion(state.question)) {
           const modality = extractModalityHint(state.question);
           const hasQcEvidence = (state.traceQueries || []).some(
@@ -418,6 +525,7 @@ function AgentView({ p = false }) {
             (q) => q.intent === "donor_attribute_ratio" && (q.result?.summary?.totalDonors || 0) > 0
           );
           if (!donorAttrDone) {
+            const split = detectSplitFromQuestion(state.question);
             const overlapEvidence = [...(state.traceQueries || [])]
               .reverse()
               .find((q) => q.intent === "donor_overlap_between_models" || q.intent === "training_donor_overlap_between_models");
@@ -433,7 +541,7 @@ function AgentView({ p = false }) {
                   "donor_attribute_ratio",
                   {
                     donorIds: sourceDonorIds,
-                    split: detectSplitFromQuestion(state.question),
+                    split,
                     attribute: ratioTarget.mode === "ethnicity" ? "Ethnicities" : "clinical_diagnosis",
                     targetValue: ratioTarget.targetValue || "",
                     askType: ratioTarget.askType || "ratio",
@@ -449,10 +557,82 @@ function AgentView({ p = false }) {
                   "donor_attribute_ratio",
                   {
                     modelId: mentionedModels[0],
-                    split: detectSplitFromQuestion(state.question),
+                    split,
                     attribute: ratioTarget.mode === "ethnicity" ? "Ethnicities" : "clinical_diagnosis",
                     targetValue: ratioTarget.targetValue || "",
                     askType: ratioTarget.askType || "ratio",
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+
+            // Modality-level ratio pipeline:
+            // modality -> processed datasets -> extract_donors(split) -> donor_attribute_ratio
+            const modalityHint = extractModalityHint(state.question);
+            if (!hasOverlapSignal(qNormEarly) && modalityHint) {
+              const extractForModality = [...(state.traceQueries || [])]
+                .reverse()
+                .find((q) => {
+                  if (q.intent !== "extract_donors" || (q.result?.rows?.length || 0) === 0) return false;
+                  const srcs = q.result?.summary?.sources || [];
+                  return srcs.some((s) => String(s?.sourceLabel || "").toLowerCase().includes(modalityHint.toLowerCase()));
+                });
+              if (extractForModality) {
+                const donorIds = (extractForModality.result?.rows || []).map((r) => r.id).filter(Boolean);
+                if (donorIds.length) {
+                  return {
+                    nextToolUse: normalizeToolUse(
+                      "donor_attribute_ratio",
+                      {
+                        donorIds,
+                        split,
+                        attribute: ratioTarget.mode === "ethnicity" ? "Ethnicities" : "clinical_diagnosis",
+                        targetValue: ratioTarget.targetValue || "",
+                        askType: ratioTarget.askType || "ratio",
+                      },
+                      state.step + 1,
+                      state.linkedEntities
+                    ),
+                  };
+                }
+              }
+
+              const datasetCandidates = [];
+              [...(state.traceQueries || [])].reverse().forEach((q) => {
+                const rows = Array.isArray(q.result?.rows) ? q.result.rows : [];
+                rows.forEach((r) => {
+                  const type = String(r?.type || "").toLowerCase();
+                  const label = String(r?.label || "").toLowerCase();
+                  if (type === "processeddata" && label.includes(modalityHint.toLowerCase())) {
+                    datasetCandidates.push(r.id);
+                  }
+                });
+              });
+              const uniqueDatasetIds = [...new Set(datasetCandidates)].slice(0, 6);
+              if (uniqueDatasetIds.length) {
+                return {
+                  nextToolUse: normalizeToolUse(
+                    "extract_donors",
+                    {
+                      nodeIds: uniqueDatasetIds,
+                      split,
+                      combine: "union",
+                    },
+                    state.step + 1,
+                    state.linkedEntities
+                  ),
+                };
+              }
+
+              return {
+                nextToolUse: normalizeToolUse(
+                  "list_nodes_by_type",
+                  {
+                    nodeType: "ProcessedData",
+                    query: modalityHint,
+                    limit: 60,
                   },
                   state.step + 1,
                   state.linkedEntities
@@ -595,6 +775,7 @@ function AgentView({ p = false }) {
         const last = traceQueries[traceQueries.length - 1];
         if (!last) return { ok: false, reason: "No query result yet." };
         const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
+        const isReclassWhatIf = isReclassificationWhatIfQuestion(question);
 
         // Ratio questions must include donor-attribute evidence.
         if (ratioNeed) {
@@ -605,6 +786,12 @@ function AgentView({ p = false }) {
             return { ok: false, reason: "Ratio question needs donor_attribute_ratio evidence." };
           }
           return { ok: true, reason: "Donor attribute ratio evidence is present." };
+        }
+        if (isReclassWhatIf) {
+          const hit = traceQueries.some((x) => x.intent === "reclassification_distribution_impact");
+          return hit
+            ? { ok: true, reason: "Reclassification drift evidence found." }
+            : { ok: false, reason: "What-if reclassification question requires reclassification_distribution_impact evidence." };
         }
         if (impactNeed) {
           const impactHit = traceQueries.some(
@@ -645,6 +832,12 @@ function AgentView({ p = false }) {
             ? { ok: true, reason: "Training donor evidence found." }
             : { ok: false, reason: "Training-set donor question requires donor extraction evidence." };
         }
+        if (isTrainingDonorListQuestion(question, extractModelMentions(q))) {
+          const donorHit = traceQueries.some((x) => x.intent === "training_donors_by_models" && (x.result?.rows?.length || 0) > 0);
+          return donorHit
+            ? { ok: true, reason: "Training donor list evidence found." }
+            : { ok: false, reason: "Training-donor list question requires training_donors_by_models evidence." };
+        }
 
         if (isNodeAttributeQuestion(question)) {
           const detailHit = traceQueries.some((x) => x.intent === "node_detail" && (x.result?.rows?.length || 0) > 0);
@@ -663,6 +856,12 @@ function AgentView({ p = false }) {
           return hit
             ? { ok: true, reason: "QC pipeline lineage evidence found." }
             : { ok: false, reason: "QC pipeline question requires qc_pipeline_for_model_modality evidence." };
+        }
+        if (isEmbeddingLeakageQuestion(question)) {
+          const hit = traceQueries.some((x) => x.intent === "embedding_leakage_between_models");
+          return hit
+            ? { ok: true, reason: "Embedding leakage evidence found." }
+            : { ok: false, reason: "Embedding leakage question requires embedding_leakage_between_models evidence." };
         }
         const linkedModelIds = extractModelMentions(q);
         if (isModelDatasetQuestion(question, linkedModelIds)) {
@@ -693,10 +892,29 @@ function AgentView({ p = false }) {
       const answerNode = async (state) => {
         setPhase("answering");
         if (state.finalAnswer) return { finalAnswer: state.finalAnswer };
+        const deterministicIntents = new Set([
+          "impact_downstream",
+          "embedding_leakage_between_models",
+        ]);
+        const deterministicHit = [...(state.traceQueries || [])]
+          .reverse()
+          .find((q) => deterministicIntents.has(String(q.intent || "")));
+        if (deterministicHit) {
+          const templated = formatIntentAnswer(
+            deterministicHit.intent,
+            deterministicHit.params,
+            deterministicHit.result,
+            { question: state.question }
+          );
+          if (templated) return { finalAnswer: templated };
+        }
         if (state.traceQueries.length === 1) {
           const only = state.traceQueries[0];
-          const templated = formatIntentAnswer(only.intent, only.params, only.result);
-          if (templated) return { finalAnswer: templated };
+          // For reclassification-impact questions, prefer LLM narrative synthesis over rigid template.
+          if (String(only.intent || "") !== "reclassification_distribution_impact") {
+            const templated = formatIntentAnswer(only.intent, only.params, only.result, { question: state.question });
+            if (templated) return { finalAnswer: templated };
+          }
         }
         const evidence = state.traceQueries.map((q) => ({
           intent: q.intent,
@@ -718,7 +936,15 @@ function AgentView({ p = false }) {
           max_tokens: 1000,
         });
         const answerText = (answerData.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-        return { finalAnswer: answerText || "No answer generated." };
+        if (answerText) return { finalAnswer: answerText };
+
+        // Fallback to deterministic formatting if LLM answer is empty.
+        const last = [...(state.traceQueries || [])].reverse()[0];
+        if (last) {
+          const templated = formatIntentAnswer(last.intent, last.params, last.result, { question: state.question });
+          if (templated) return { finalAnswer: templated };
+        }
+        return { finalAnswer: "No answer generated." };
       };
 
       const workflow = new StateGraph(LGState)
