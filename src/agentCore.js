@@ -786,11 +786,11 @@ function queryGraph(intent, params) {
       const versionMatch = q.match(/v\s*([0-9]+(?:\.[0-9]+)*)/i);
       const requestedVersion = versionMatch ? `v${versionMatch[1]}` : null;
       const isScrna = qHasAny(q, ["scrna", "sc rna"]);
-      const pipelines = NODES.filter((n) => n.type === "Pipeline");
+      const pipelines = NODES.filter((n) => n.type === "Pipeline" || n.type === "QCPipeline");
       const matches = pipelines.filter((p) => {
         const lbl = labelSingleLine(p.label).toLowerCase();
         if (isScrna && !qHas(lbl, "scrna")) return false;
-        if (requestedVersion && String(p.detail?.Version || "").toLowerCase() !== requestedVersion.toLowerCase()) return false;
+        if (requestedVersion && !versionMatches(requestedVersion, String(p.detail?.Version || ""))) return false;
         return isScrna || qHas(q, lbl);
       });
       const best = matches.length ? matches : (isScrna ? pipelines.filter((p) => qHas(labelSingleLine(p.label).toLowerCase(), "scrna")) : []);
@@ -2172,7 +2172,7 @@ const SUGGESTIONS = [
   "Which models are downstream of HPAP-002?",
   "Which donors appear in both the Genomic FM and Spatial FM training sets?",
   "Among donors used to train both the Genomic FM and Spatial FM, what is the proportion of T1D patients?",
-  "What QC pipeline produced scRNA for scFM-v1?",
+  "What QC pipeline produced scRNA for Genomic FM",
   "Who is responsible for the scRNA QC pipeline v1?",
 ];
 

@@ -122,6 +122,12 @@ function AgentView({ p = false }) {
     const asksProduction = qHasAny(s, ["produced", "generate", "generated", "used for", "for", "生成", "用于", "哪个"]);
     return asksPipeline && asksProduction;
   };
+  const isQcPipelineOwnerQuestion = (q = "") => {
+    const s = normalizeQ(q);
+    const asksPipeline = qHasAny(s, ["qc pipeline", "pipeline", "流程", "质控"]);
+    const asksOwner = qHasAny(s, ["who is responsible", "responsible", "owner", "contact", "负责人", "谁负责", "联系方式"]);
+    return asksPipeline && asksOwner;
+  };
   const extractModalityHint = (q = "") => {
     const s = normalizeQ(q);
     if (qHasAny(s, ["scrna", "sc rna", "single-cell rna", "single cell rna", "scrna-seq", "scrna seq"])) return "scRNA-seq";
@@ -329,6 +335,21 @@ function AgentView({ p = false }) {
         const ratioTarget = parseDonorAttributeTargetFromQuestion(qNormEarly);
         const linkedModelIds = Array.isArray(state.linkedEntities?.modelIds) ? state.linkedEntities.modelIds : [];
         const mentionedModels = [...new Set(linkedModelIds.length ? linkedModelIds : extractModelMentions(qNormEarly))];
+        if (isQcPipelineOwnerQuestion(state.question)) {
+          const hasOwnerEvidence = (state.traceQueries || []).some(
+            (x) => x.intent === "qc_pipeline_owner" && (x.result?.rows?.length || 0) > 0
+          );
+          if (!hasOwnerEvidence) {
+            return {
+              nextToolUse: normalizeToolUse(
+                "qc_pipeline_owner",
+                { query: state.question },
+                state.step + 1,
+                state.linkedEntities
+              ),
+            };
+          }
+        }
         if (isReclassificationWhatIfQuestion(state.question)) {
           const parsed = parseReclassificationOverrides(state.question);
           const scopeModelId = mentionedModels[0] || "";
@@ -440,7 +461,7 @@ function AgentView({ p = false }) {
                   "qc_pipeline_for_model_modality",
                   {
                     modelId: mentionedModels[0],
-                    modality: modality || "scRNA-seq",
+                    ...(modality ? { modality } : {}),
                     split: detectSplitFromQuestion(state.question),
                   },
                   state.step + 1,
