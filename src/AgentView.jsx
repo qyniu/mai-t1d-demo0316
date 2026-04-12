@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from "react";
 import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
+import { NODES, EDGES } from "./graphData";
 import {
   queryGraph,
   GRAPH_CONTEXT,
@@ -26,6 +27,27 @@ import {
   AGENT_LANGGRAPH_PLANNER_SYSTEM,
   AGENT_LANGGRAPH_ANSWER_SYSTEM,
 } from "./agentCore";
+
+const ICON = {
+  robot: "\uD83E\uDD16",
+  user: "\uD83D\uDC64",
+  clear: "\uD83E\uDDF9",
+  retry: "\uD83D\uDD01",
+  route: "\uD83E\uDDE0",
+  link: "\uD83D\uDD17",
+  planner: "\uD83D\uDDFA",
+  stop: "\u23F9",
+  clarify: "\u2753",
+  answer: "\uD83D\uDCA1",
+  intent: "\uD83C\uDFAF",
+  fallback: "\u21A9",
+  act: "\uD83D\uDD0E",
+  noProgress: "\u26A0",
+  verifyOk: "\u2705",
+  verifyNo: "\u274C",
+  done: "\u2705",
+  error: "\u274C",
+};
 
 function AgentView({ p = false }) {
   const [messages,   setMessages]   = useState([]);
@@ -72,6 +94,57 @@ function AgentView({ p = false }) {
       preview: rows.slice(0, 5),
       summary: result?.summary || null,
     };
+  };
+  const isNodeAttributeQuestion = (q = "") =>
+    qHasAny(normalizeQ(q), [
+      "who is responsible", "responsible", "owner", "contact", "email",
+      "path", "version", "status", "负责人", "谁负责", "联系方式", "邮箱", "路径", "版本",
+    ]);
+  const isModelDatasetQuestion = (q = "", modelIds = []) => {
+    const s = normalizeQ(q);
+    const asksDataset = qHasAny(s, ["dataset", "datasets", "data", "数据集", "数据"]);
+    const hasModel = (Array.isArray(modelIds) && modelIds.length > 0) || qHasAny(s, ["model", "fm", "foundation model", "模型"]);
+    const asksRelation = qHasAny(s, ["train", "trained", "used", "input", "for", "训练", "用于", "用了"]);
+    return asksDataset && hasModel && asksRelation;
+  };
+  const isDatasetToModelsQuestion = (q = "") => {
+    const s = normalizeQ(q);
+    const asksModels = qHasAny(s, ["which model", "which models", "what model", "what models", "模型"]);
+    const asksDownstream = qHasAny(s, ["downstream", "used by", "of", "下游", "由"]);
+    const hasDatasetLike = qHasAny(s, [
+      "dataset", "data", "rna", "scrna", "sc rna", "scRNA-seq", "single-cell rna", "modality", "数据集", "数据",
+    ]);
+    return asksModels && asksDownstream && hasDatasetLike;
+  };
+  const isQcPipelineQuestion = (q = "") => {
+    const s = normalizeQ(q);
+    const asksPipeline = qHasAny(s, ["qc pipeline", "pipeline", "流程", "质控"]);
+    const asksProduction = qHasAny(s, ["produced", "generate", "generated", "used for", "for", "生成", "用于", "哪个"]);
+    return asksPipeline && asksProduction;
+  };
+  const extractModalityHint = (q = "") => {
+    const s = normalizeQ(q);
+    if (qHasAny(s, ["scrna", "sc rna", "single-cell rna", "single cell rna", "scrna-seq", "scrna seq"])) return "scRNA-seq";
+    if (qHasAny(s, ["scatac", "sc atac", "atac"])) return "scATAC-seq";
+    if (qHasAny(s, ["snmultiomic", "snmultiomics", "single-cell multiome", "single cell multiome"])) return "snMultiomics";
+    if (qHasAny(s, ["histology"])) return "Histology";
+    if (qHasAny(s, ["codex"])) return "CODEX";
+    if (qHasAny(s, ["imc", "imaging mass cytometry"])) return "IMC";
+    if (qHasAny(s, ["cite-seq", "cite seq"])) return "CITE-seq";
+    return "";
+  };
+  const extractDatasetQueryHint = (q = "") => {
+    const s = normalizeQ(q);
+    if (qHasAny(s, ["scrna", "sc rna", "single-cell rna", "single cell rna", "scrna-seq", "scrna seq"])) return "scRNA-seq";
+    if (qHasAny(s, ["atac", "scatac", "sc atac"])) return "scATAC-seq";
+    if (qHasAny(s, ["histology"])) return "Histology";
+    if (qHasAny(s, ["codex"])) return "CODEX";
+    if (qHasAny(s, ["imc", "imaging mass cytometry"])) return "IMC";
+    return String(q || "").trim();
+  };
+  const extractRequestedVersion = (q = "") => {
+    const m = String(q || "").toLowerCase().match(/\bv\s*([0-9]+(?:\.[0-9]+)*)\b/);
+    return m ? `v${m[1]}` : "";
   };
   const normalizeToolUse = (intent, params, idx=1, linkedEntities=null) => {
     const safeIntent = String(intent || "").trim();
@@ -154,7 +227,7 @@ function AgentView({ p = false }) {
 
     try {
       setPhase("thinking");
-      addTrace({ kind:"step", icon:"??", label:"LangGraph - route", detail:"Initializing graph state..." });
+      addTrace({ kind:"step", icon:ICON.route, label:"LangGraph - route", detail:"Initializing graph state..." });
       // Let React paint user bubble + thinking state before running graph workflow.
       await yieldToUI();
 
@@ -183,10 +256,10 @@ function AgentView({ p = false }) {
             .slice(0, 3)
             .map((x) => `${x.label} (${x.score.toFixed(2)})`)
             .join("; ");
-          addTrace({ kind:"info", icon:"??", label:"Entity linker", detail:`Model candidates: ${hintText}` });
+          addTrace({ kind:"info", icon:ICON.link, label:"Entity linker", detail:`Model candidates: ${hintText}` });
         }
         if (forced.length) {
-          addTrace({ kind:"intent", icon:"??", label:"LangGraph route", detail:`Forced route with ${forced.length} tool step(s).` });
+          addTrace({ kind:"intent", icon:ICON.route, label:"LangGraph route", detail:`Forced route with ${forced.length} tool step(s).` });
         }
         return {
           forcedQueue: forced,
@@ -198,15 +271,15 @@ function AgentView({ p = false }) {
       const planNode = async (state) => {
         if (state.done) return {};
         if (state.noProgressCount >= 1) {
-          addTrace({ kind:"info", icon:"??", label:"LangGraph stop", detail:"Stopping due to repeated no-progress tool calls." });
+          addTrace({ kind:"info", icon:ICON.stop, label:"LangGraph stop", detail:"Stopping due to repeated no-progress tool calls." });
           return { done: true };
         }
         if (state.step >= LANGGRAPH_MAX_STEPS) {
-          addTrace({ kind:"info", icon:"??", label:"LangGraph planner", detail:"Reached max steps, moving to answer node." });
+          addTrace({ kind:"info", icon:ICON.planner, label:"LangGraph planner", detail:"Reached max steps, moving to answer node." });
           return { done: true };
         }
         if (state.forceOnly && (!state.forcedQueue || state.forcedQueue.length === 0) && state.traceQueries.length > 0) {
-          addTrace({ kind:"info", icon:"?", label:"LangGraph fast-exit", detail:"Forced route satisfied; skipping extra planner rounds." });
+          addTrace({ kind:"info", icon:ICON.done, label:"LangGraph fast-exit", detail:"Forced route satisfied; skipping extra planner rounds." });
           return { done: true };
         }
 
@@ -248,6 +321,77 @@ function AgentView({ p = false }) {
         const ratioTarget = parseDonorAttributeTargetFromQuestion(qNormEarly);
         const linkedModelIds = Array.isArray(state.linkedEntities?.modelIds) ? state.linkedEntities.modelIds : [];
         const mentionedModels = [...new Set(linkedModelIds.length ? linkedModelIds : extractModelMentions(qNormEarly))];
+        if (isQcPipelineQuestion(state.question)) {
+          const modality = extractModalityHint(state.question);
+          const hasQcEvidence = (state.traceQueries || []).some(
+            (x) => x.intent === "qc_pipeline_for_model_modality" && (x.result?.rows?.length || 0) > 0
+          );
+          if (!hasQcEvidence) {
+            if (mentionedModels.length >= 1) {
+              return {
+                nextToolUse: normalizeToolUse(
+                  "qc_pipeline_for_model_modality",
+                  {
+                    modelId: mentionedModels[0],
+                    modality: modality || "scRNA-seq",
+                    split: detectSplitFromQuestion(state.question),
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+            return {
+              nextToolUse: normalizeToolUse(
+                "search_nodes",
+                { query: state.question, typeHints: ["Model"], limit: 20 },
+                state.step + 1,
+                state.linkedEntities
+              ),
+            };
+          }
+        }
+        if (isModelDatasetQuestion(state.question, mentionedModels)) {
+          if (mentionedModels.length === 0) {
+            const reqVer = extractRequestedVersion(state.question);
+            const verHint = reqVer ? ` (requested version: ${reqVer})` : "";
+            return {
+              done: true,
+              finalAnswer: `I could not find a matching model node in the current graph${verHint}. Please confirm the exact model name/version available in this graph.`,
+            };
+          }
+          const split = detectSplitFromQuestion(state.question);
+          const alreadyHasDatasetEvidence = (state.traceQueries || []).some((x) => {
+            if (x.intent !== "datasets_for_model") return false;
+            const pmid = String(x.params?.modelId || "");
+            const smid = mentionedModels[0] || "";
+            return (x.result?.rows?.length || 0) > 0 && (!smid || pmid === smid);
+          });
+          if (!alreadyHasDatasetEvidence && mentionedModels.length >= 1) {
+            const modelId = mentionedModels[0];
+            return {
+              nextToolUse: normalizeToolUse(
+                "datasets_for_model",
+                { modelId, split },
+                state.step + 1,
+                state.linkedEntities
+              ),
+            };
+          }
+        }
+        if (isDatasetToModelsQuestion(state.question)) {
+          const hasEvidence = (state.traceQueries || []).some((x) => x.intent === "models_for_dataset" && (x.result?.rows?.length || 0) > 0);
+          if (!hasEvidence) {
+            return {
+              nextToolUse: normalizeToolUse(
+                "models_for_dataset",
+                { query: extractDatasetQueryHint(state.question) },
+                state.step + 1,
+                state.linkedEntities
+              ),
+            };
+          }
+        }
         if (qHas(qNormEarly, "donor") && hasOverlapSignal(qNormEarly) && mentionedModels.length >= 3) {
           const overlapAlreadyDone = state.traceQueries.some(
             (q) =>
@@ -318,7 +462,38 @@ function AgentView({ p = false }) {
           }
         }
 
-        addTrace({ kind:"step", icon:"???", label:`LangGraph plan step ${state.step + 1}`, detail:"Selecting next tool action..." });
+        // Generic node-info retrieval: if search matched node(s), follow with node_detail.
+        if (isNodeAttributeQuestion(state.question)) {
+          const alreadyDetailed = state.traceQueries.some((x) => x.intent === "node_detail" && (x.result?.rows?.length || 0) > 0);
+          if (!alreadyDetailed) {
+            const last = state.traceQueries[state.traceQueries.length - 1];
+            if (last?.intent === "search_nodes" && (last.result?.rows?.length || 0) > 0) {
+              const best = last.result.rows[0];
+              if (best?.id) {
+                return {
+                  nextToolUse: normalizeToolUse(
+                    "node_detail",
+                    { nodeId: best.id },
+                    state.step + 1,
+                    state.linkedEntities
+                  ),
+                };
+              }
+            }
+            if (!state.traceQueries.length) {
+              return {
+                nextToolUse: normalizeToolUse(
+                  "search_nodes",
+                  { query: state.question, limit: 20 },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+          }
+        }
+
+        addTrace({ kind:"step", icon:ICON.planner, label:`LangGraph plan step ${state.step + 1}`, detail:"Selecting next tool action..." });
         const evidence = state.traceQueries.map((q) => summarizeResultForPlanner(q.intent, q.result));
         const plannerMsg = {
           role: "user",
@@ -342,11 +517,11 @@ function AgentView({ p = false }) {
         const confidence = Number(planJson.confidence ?? 0);
 
         if (mode === "clarify") {
-          addTrace({ kind:"intent", icon:"??", label:"LangGraph planner: clarify", detail:`confidence=${confidence.toFixed(2)}` });
+          addTrace({ kind:"intent", icon:ICON.clarify, label:"LangGraph planner: clarify", detail:`confidence=${confidence.toFixed(2)}` });
           return { done: true, finalAnswer: String(planJson.clarify_question || "Could you clarify your target model/dataset/donor?") };
         }
         if (mode === "answer") {
-          addTrace({ kind:"intent", icon:"??", label:"LangGraph planner: answer", detail:`confidence=${confidence.toFixed(2)}` });
+          addTrace({ kind:"intent", icon:ICON.answer, label:"LangGraph planner: answer", detail:`confidence=${confidence.toFixed(2)}` });
           return { done: true, finalAnswer: String(planJson.answer || "") };
         }
 
@@ -354,14 +529,14 @@ function AgentView({ p = false }) {
         if (nextTool) {
           const sig = `${nextTool.input.intent}:${JSON.stringify(nextTool.input.params || {})}`;
           if (sig === state.lastActionSignature) {
-            addTrace({ kind:"info", icon:"??", label:"LangGraph dedup", detail:"Planner proposed the same query again; ending iterative loop." });
+            addTrace({ kind:"info", icon:ICON.noProgress, label:"LangGraph dedup", detail:"Planner proposed the same query again; ending iterative loop." });
             return { done: true };
           }
-          addTrace({ kind:"intent", icon:"??", label:`Intent: ${nextTool.input.intent}`, detail:`params: ${JSON.stringify(nextTool.input.params||{})}` });
+          addTrace({ kind:"intent", icon:ICON.intent, label:`Intent: ${nextTool.input.intent}`, detail:`params: ${JSON.stringify(nextTool.input.params||{})}` });
           return { nextToolUse: nextTool };
         }
 
-        addTrace({ kind:"info", icon:"??", label:"LangGraph planner fallback", detail:"Planner output invalid; using tool-call fallback." });
+        addTrace({ kind:"info", icon:ICON.fallback, label:"LangGraph planner fallback", detail:"Planner output invalid; using tool-call fallback." });
         const fallbackData = await callAnthropic({
           system: GRAPH_CONTEXT,
           tools: AGENT_TOOLS,
@@ -385,7 +560,7 @@ function AgentView({ p = false }) {
         const tu = state.nextToolUse;
         if (!tu?.input?.intent) return { step: state.step + 1 };
         setPhase("querying");
-        addTrace({ kind:"step", icon:"??", label:"LangGraph - act", detail:`Executing ${tu.input.intent}` });
+        addTrace({ kind:"step", icon:ICON.act, label:"LangGraph - act", detail:`Executing ${tu.input.intent}` });
         // Allow trace/state updates to render before synchronous graph computation.
         await yieldToUI();
         const { intent, params } = tu.input;
@@ -396,7 +571,7 @@ function AgentView({ p = false }) {
         const noProgressCount = repeatedSameAction && nRows === 0 ? (state.noProgressCount || 0) + 1 : 0;
         addTrace({ kind:"result", icon: nRows>0?"OK":"INFO", label:`${intent}`, detail:`${nRows} row${nRows!==1?"s":""} returned`, rows: result.rows?.slice(0,3) });
         if (repeatedSameAction && nRows === 0) {
-          addTrace({ kind:"info", icon:"??", label:"LangGraph no-progress", detail:"Repeated empty result for the same query; stopping to avoid loop." });
+          addTrace({ kind:"info", icon:ICON.noProgress, label:"LangGraph no-progress", detail:"Repeated empty result for the same query; stopping to avoid loop." });
         }
         const forceQueueEmptyAfterThis = !state.forcedQueue || state.forcedQueue.length === 0;
         const shouldFinishForced = state.forceOnly && forceQueueEmptyAfterThis && nRows > 0;
@@ -471,6 +646,32 @@ function AgentView({ p = false }) {
             : { ok: false, reason: "Training-set donor question requires donor extraction evidence." };
         }
 
+        if (isNodeAttributeQuestion(question)) {
+          const detailHit = traceQueries.some((x) => x.intent === "node_detail" && (x.result?.rows?.length || 0) > 0);
+          return detailHit
+            ? { ok: true, reason: "Node detail evidence found." }
+            : { ok: false, reason: "Node-attribute question requires node_detail evidence." };
+        }
+        if (isDatasetToModelsQuestion(question)) {
+          const hit = traceQueries.some((x) => x.intent === "models_for_dataset" && (x.result?.rows?.length || 0) > 0);
+          return hit
+            ? { ok: true, reason: "Dataset-to-model evidence found." }
+            : { ok: false, reason: "Dataset-downstream-model question requires models_for_dataset evidence." };
+        }
+        if (isQcPipelineQuestion(question)) {
+          const hit = traceQueries.some((x) => x.intent === "qc_pipeline_for_model_modality" && (x.result?.rows?.length || 0) > 0);
+          return hit
+            ? { ok: true, reason: "QC pipeline lineage evidence found." }
+            : { ok: false, reason: "QC pipeline question requires qc_pipeline_for_model_modality evidence." };
+        }
+        const linkedModelIds = extractModelMentions(q);
+        if (isModelDatasetQuestion(question, linkedModelIds)) {
+          const dsHit = traceQueries.some((x) => x.intent === "datasets_for_model" && (x.result?.rows?.length || 0) > 0);
+          return dsHit
+            ? { ok: true, reason: "Model-to-dataset evidence found." }
+            : { ok: false, reason: "Model-specific dataset question requires datasets_for_model evidence." };
+        }
+
         return rows.length > 0
           ? { ok: true, reason: "Latest query returned non-empty evidence." }
           : { ok: false, reason: "Latest query returned empty rows." };
@@ -481,7 +682,7 @@ function AgentView({ p = false }) {
         const verdict = verifyCoverage(state.question, state.traceQueries || []);
         addTrace({
           kind: verdict.ok ? "done" : "info",
-          icon: verdict.ok ? "?" : "??",
+          icon: verdict.ok ? ICON.verifyOk : ICON.verifyNo,
           label: "LangGraph - verify",
           detail: verdict.reason,
         });
@@ -562,11 +763,11 @@ function AgentView({ p = false }) {
 
       const answer = String(finalState.finalAnswer || "").trim() || "(no response)";
       stopTimer();
-      addTrace({ kind:"done", icon:"?", label:"Done", detail:`LangGraph run completed in ${finalState.step ?? 0} step(s)` });
+      addTrace({ kind:"done", icon:ICON.done, label:"Done", detail:`LangGraph run completed in ${finalState.step ?? 0} step(s)` });
       setMessages(m=>[...m, { role:"assistant", content:answer, trace:finalState.traceQueries || [] }]);
     } catch(err) {
       stopTimer();
-      addTrace({ kind:"error", icon:"?", label:"Error", detail:err.message });
+      addTrace({ kind:"error", icon:ICON.error, label:"Error", detail:err.message });
       setLastError(err.message);
       setMessages(m=>[...m, { role:"assistant", content:`Error: ${err.message}`, trace:[], isError:true }]);
     }
@@ -592,7 +793,7 @@ function AgentView({ p = false }) {
 
   return (
     <div style={{ flex:1, display:"flex", overflow:"hidden", background:"#f8fafc" }}>
-      {/* LEFT PANEL ?suggestions */}
+      {/* LEFT PANEL suggestions */}
       <div style={{ width:p?230:210, borderRight:"1px solid #e2e8f0", background:"#fff", display:"flex", flexDirection:"column", overflowY:"auto", flexShrink:0 }}>
         <div style={{ padding:"14px 14px 10px", borderBottom:"1px solid #e2e8f0" }}>
           <div style={{ fontSize:p?11:9.5, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:10 }}>Suggested questions</div>
@@ -615,7 +816,7 @@ function AgentView({ p = false }) {
               {messages.filter(m=>m.role==="user").map((m,i)=>(
                 <button key={i} onClick={()=>sendMessage(m.content)} disabled={loading}
                   style={{ padding:"6px 9px", borderRadius:5, border:"1px solid #e2e8f0", background:"#f8fafc", cursor:loading?"not-allowed":"pointer", textAlign:"left", fontSize:p?12:10, fontFamily:"Georgia,serif", color:"#64748b", lineHeight:1.4, opacity:loading?0.4:1 }}>
-                  ? {m.content.length>48 ? m.content.slice(0,48)+"..." : m.content}
+                  - {m.content.length>48 ? m.content.slice(0,48)+"..." : m.content}
                 </button>
               ))}
             </div>
@@ -629,11 +830,11 @@ function AgentView({ p = false }) {
         </div>
       </div>
 
-      {/* CENTER PANEL ?chat */}
+      {/* CENTER PANEL chat */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", minWidth:0 }}>
         <div style={{ padding:"10px 18px", background:"#fff", borderBottom:"1px solid #e2e8f0", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>AI Agent Interface ?Mode 4</div>
+            <div style={{ fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>AI Agent Interface | Mode 4</div>
             <div style={{ fontSize:p?15.5:13.5, fontWeight:700, color:"#0f172a", fontFamily:"Georgia,serif" }}>MAI-T1D Governance Agent</div>
             <div style={{ fontSize:p?12:10, color:"#64748b", fontStyle:"italic", fontFamily:"Georgia,serif" }}>Queries the provenance graph via structured tool calls  Claude Sonnet</div>
           </div>
@@ -642,7 +843,7 @@ function AgentView({ p = false }) {
               style={{ padding:"5px 12px", borderRadius:6, border:"1px solid #e2e8f0", background:"#f8fafc", cursor:"pointer", fontSize:p?12.5:10.5, fontFamily:"Georgia,serif", color:"#64748b" }}
               onMouseEnter={e=>{ e.currentTarget.style.borderColor="#f43f5e"; e.currentTarget.style.color="#9f1239"; }}
               onMouseLeave={e=>{ e.currentTarget.style.borderColor="#e2e8f0"; e.currentTarget.style.color="#64748b"; }}>
-              ?? Clear
+              {ICON.clear} Clear
             </button>
           )}
         </div>
@@ -650,7 +851,7 @@ function AgentView({ p = false }) {
         <div style={{ flex:1, overflowY:"auto", padding:"20px 20px 12px", display:"flex", flexDirection:"column", gap:10 }}>
           {messages.length === 0 && !loading && (
             <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, paddingBottom:40 }}>
-              <div style={{ fontSize:36, opacity:0.12 }}>??</div>
+              <div style={{ fontSize:36, opacity:0.12 }}>{ICON.robot}</div>
               <div style={{ fontSize:p?15:13, fontWeight:700, color:"#94a3b8", fontFamily:"Georgia,serif" }}>Ask a governance question</div>
               <div style={{ fontSize:p?13:11, color:"#94a3b8", fontStyle:"italic", fontFamily:"Georgia,serif", textAlign:"center", lineHeight:1.7 }}>
                 The agent will query the MAI-T1D<br/>provenance graph and explain the results.
@@ -663,25 +864,25 @@ function AgentView({ p = false }) {
               {m.role==="user" ? (
                 <div style={{ display:"flex", alignItems:"flex-start", gap:8, justifyContent:"flex-end" }}>
                   <div style={userBubble}>{m.content}</div>
-                  <div style={{ width:28, height:28, borderRadius:"50%", background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, flexShrink:0, marginTop:2 }}>??</div>
+                  <div style={{ width:28, height:28, borderRadius:"50%", background:"#0f172a", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, flexShrink:0, marginTop:2 }}>{ICON.user}</div>
                 </div>
               ) : (
                 <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
-                  <div style={{ width:28, height:28, borderRadius:"50%", background:m.isError?"#fff1f2":"#faf5ff", border:`1.5px solid ${m.isError?"#f43f5e":"#8b5cf6"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, flexShrink:0, marginTop:2 }}>{m.isError?"??":"??"}</div>
+                  <div style={{ width:28, height:28, borderRadius:"50%", background:m.isError?"#fff1f2":"#faf5ff", border:`1.5px solid ${m.isError?"#f43f5e":"#8b5cf6"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, flexShrink:0, marginTop:2 }}>{m.isError?ICON.error:ICON.robot}</div>
                   <div>
                     <div style={{...agentBubble, ...(m.isError?{borderColor:"#fca5a5",background:"#fff1f2",color:"#9f1239"}:{})}}>{m.content}</div>
                     {/* FIX #4: retry button on error */}
                     {m.isError && !loading && (
                       <button onClick={retryLast}
                         style={{ marginTop:6, padding:"5px 14px", borderRadius:6, border:"1px solid #f43f5e", background:"#fff1f2", color:"#9f1239", cursor:"pointer", fontSize:p?12:10.5, fontFamily:"Georgia,serif", fontWeight:700 }}>
-                        ?? Retry
+                        {ICON.retry} Retry
                       </button>
                     )}
                     {m.trace?.length > 0 && (
                       <div style={{ marginTop:5, display:"flex", gap:5, flexWrap:"wrap" }}>
                         {m.trace.map((q,j)=>(
                           <div key={j} style={{ padding:"3px 8px", borderRadius:4, background:"#faf5ff", border:"1px solid #ddd6fe", fontSize:p?11.5:9.5, fontFamily:"monospace", color:"#7c3aed" }}>
-                             {q.intent} ?{q.result.rows?.length ?? 0} rows
+                             {q.intent} {q.result.rows?.length ?? 0} rows
                           </div>
                         ))}
                       </div>
@@ -694,7 +895,7 @@ function AgentView({ p = false }) {
 
           {loading && (
             <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
-              <div style={{ width:28, height:28, borderRadius:"50%", background:"#faf5ff", border:"1.5px solid #8b5cf6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, flexShrink:0, marginTop:2 }}>??</div>
+              <div style={{ width:28, height:28, borderRadius:"50%", background:"#faf5ff", border:"1.5px solid #8b5cf6", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, flexShrink:0, marginTop:2 }}>{ICON.robot}</div>
               <div style={thinkingBubble}>
                 { phase==="thinking"  ? "Analyzing question and selecting query pattern..."
                 : phase==="querying"  ? "Executing graph query against provenance store..."
@@ -712,13 +913,13 @@ function AgentView({ p = false }) {
               value={input}
               onChange={e=>setInput(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendMessage(); }}}
-              placeholder="Ask a governance question?(Enter to send, Shift+Enter for new line)"
+              placeholder="Ask a governance question (Enter to send, Shift+Enter for new line)"
               rows={2}
               style={{ flex:1, padding:"9px 12px", borderRadius:8, border:`1.5px solid ${input.trim()?"#8b5cf6":"#e2e8f0"}`, fontSize:p?13:11, fontFamily:"Georgia,serif", resize:"none", outline:"none", lineHeight:1.6, background:"#f8fafc", color:"#1e293b", transition:"border-color 0.15s" }}
             />
             <button onClick={()=>sendMessage()} disabled={!input.trim()||loading}
               style={{ padding:"10px 18px", height:56, borderRadius:8, border:"none", background:input.trim()&&!loading?"#0f172a":"#cbd5e1", color:"#fff", fontSize:p?13:11, fontWeight:700, fontFamily:"Georgia,serif", cursor:input.trim()&&!loading?"pointer":"not-allowed", flexShrink:0 }}>
-              Ask ?            </button>
+              Ask</button>
           </div>
           <div style={{ marginTop:5, fontSize:p?11.5:9.5, color:"#94a3b8", fontFamily:"monospace" }}>
             {loading ? `${phase==="thinking"?"Thinking":phase==="querying"?"Querying graph":phase==="answering"?"Answering":"Loading"}...`
@@ -727,7 +928,7 @@ function AgentView({ p = false }) {
         </div>
       </div>
 
-      {/* RIGHT PANEL ?trace */}
+      {/* RIGHT PANEL trace */}
       <div style={{ width:p?240:220, borderLeft:"1px solid #e2e8f0", background:"#fff", display:"flex", flexDirection:"column", overflowY:"auto", flexShrink:0 }}>
         <div style={{ padding:"12px 14px 10px", borderBottom:"1px solid #e2e8f0", flexShrink:0 }}>
           <div style={{ fontSize:p?11:9.5, fontWeight:700, color:"#94a3b8", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:2 }}>Query Trace</div>
@@ -781,5 +982,8 @@ function AgentView({ p = false }) {
 
 
 export default AgentView;
+
+
+
 
 

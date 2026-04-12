@@ -190,8 +190,14 @@ function queryGraph(intent, params) {
   const modalityToDatasetIds = {
     "scrna": ["proc_scrna_v1"],
     "scrna-seq": ["proc_scrna_v1"],
+    "scrna seq": ["proc_scrna_v1"],
+    "scrna-seq dataset": ["proc_scrna_v1"],
+    "scrna dataset": ["proc_scrna_v1"],
     "sc rna": ["proc_scrna_v1"],
     "single-cell rna": ["proc_scrna_v1"],
+    "single cell rna": ["proc_scrna_v1"],
+    "single-cell rna-seq": ["proc_scrna_v1"],
+    "single cell rna-seq": ["proc_scrna_v1"],
     "wgs": [],
   };
   const resolveModalityDatasetIds = (raw) => {
@@ -256,10 +262,18 @@ function queryGraph(intent, params) {
         resolveNode(params.datasetId, ["ProcessedData"]) ||
         resolveNode(params.datasetType, ["ProcessedData"]) ||
         resolveNode(params.query, ["ProcessedData"]);
-      const datasetId = datasetNode?.id || params.datasetId || params.datasetType;
-      if (!datasetId) return { rows: [] };
+      const fallbackIds = [
+        ...resolveModalityDatasetIds(params.datasetType),
+        ...resolveModalityDatasetIds(params.query),
+      ];
+      const sourceIds = new Set();
+      if (datasetNode?.id) sourceIds.add(datasetNode.id);
+      if (params.datasetId && !datasetNode?.id) sourceIds.add(String(params.datasetId));
+      if (params.datasetType && !datasetNode?.id && fallbackIds.length === 0) sourceIds.add(String(params.datasetType));
+      fallbackIds.forEach((id) => sourceIds.add(id));
+      if (!sourceIds.size) return { rows: [] };
 
-      const sourceIds = new Set([datasetId]);
+      const datasetId = datasetNode?.id || [...sourceIds][0];
       // Include split children (e.g. proc_xxx__training / proc_xxx__evaluation).
       EDGES
         .filter(e => e.label==="DERIVED_FROM" && edgeSrcId(e)===datasetId)
@@ -1553,6 +1567,8 @@ Available intents:
 - models_for_dataset
 - pipeline_for_dataset
 - downstream_tasks
+- qc_pipeline_for_model_modality
+- qc_pipeline_owner
 
 Workflow:
 1) Plan multi-step retrieval from graph structure.
@@ -1580,6 +1596,8 @@ const INTENT_ENUM = [
   "models_for_dataset",
   "pipeline_for_dataset",
   "downstream_tasks",
+  "qc_pipeline_for_model_modality",
+  "qc_pipeline_owner",
   "impact_downstream",
 ];
 
@@ -1698,7 +1716,47 @@ const MODEL_ALIAS_DICTIONARY = {
     "protein foundation model",
   ],
 };
+const MODEL_FAMILY_RULES = [
+  { ids: ["model_scfm"], aliases: ["scfm", "sc fm", "single-cell fm", "single cell fm", "epiagent"] },
+  { ids: ["model_genomic"], aliases: ["genomic fm", "geonomic fm", "epcot"] },
+  { ids: ["model_spatial"], aliases: ["spatial fm", "kronos"] },
+  { ids: ["model_spatial_omics"], aliases: ["spatial omics fm"] },
+  { ids: ["model_protein"], aliases: ["protein fm"] },
+];
 const MODEL_CANDIDATE_THRESHOLD = 0.74;
+const extractVersionTag = (text = "") => {
+  const m = String(text || "").toLowerCase().match(/\bv\s*([0-9]+(?:\.[0-9]+)*)\b/);
+  return m ? `v${m[1]}` : "";
+};
+const canonicalizeVersionTag = (tag = "") => {
+  const t = String(tag || "").toLowerCase().trim();
+  if (!t) return "";
+  const m = t.match(/^v\s*([0-9]+(?:\.[0-9]+)*)$/);
+  if (!m) return t.replace(/\s+/g, "");
+  const parts = m[1].split(".").map((x) => String(Number(x)));
+  while (parts.length > 1 && parts[parts.length - 1] === "0") parts.pop();
+  return `v${parts.join(".")}`;
+};
+const versionMatches = (requested = "", actual = "") => {
+  if (!requested || !actual) return false;
+  return canonicalizeVersionTag(requested) === canonicalizeVersionTag(actual);
+};
+const modelIdsMentionedByFamilyAlias = (text = "") => {
+  const q = normalizeSearchText(text);
+  if (!q) return [];
+  const ids = new Set();
+  MODEL_FAMILY_RULES.forEach((rule) => {
+    const hit = rule.aliases.some((alias) => qHas(q, normalizeSearchText(alias)) || q.includes(normalizeSearchText(alias)));
+    if (hit) rule.ids.forEach((id) => ids.add(id));
+  });
+  return [...ids];
+};
+const modelVersionTag = (node) => {
+  if (!node) return "";
+  const fromDetail = extractVersionTag(node?.detail?.Version || node?.detail?.version || "");
+  if (fromDetail) return fromDetail;
+  return extractVersionTag(labelSingleLine(node?.label || ""));
+};
 const resolveModelIdFromText = (raw = "") => {
   const input = String(raw || "").trim();
   if (!input) return "";
@@ -1726,9 +1784,15 @@ const resolveModelIdFromText = (raw = "") => {
   const modelNodes = NODES.filter((n) => n.type === "Model");
   const exactByLabel = modelNodes.find((n) => normalizeSearchText(labelSingleLine(n.label)) === normalizeSearchText(input));
   if (exactByLabel) return exactByLabel.id;
+  const requestedVersion = extractVersionTag(input);
+  const requestedFamilies = modelIdsMentionedByFamilyAlias(input);
 
   const candidates = [];
   for (const node of modelNodes) {
+    if (requestedFamilies.length && !requestedFamilies.includes(node.id)) continue;
+    const nodeVer = modelVersionTag(node);
+    if (requestedVersion && nodeVer && !versionMatches(requestedVersion, nodeVer)) continue;
+    if (requestedVersion && !nodeVer) continue;
     const aliases = new Set([
       labelSingleLine(node.label),
       node.id,
@@ -1747,6 +1811,7 @@ const resolveModelIdFromText = (raw = "") => {
       candidates.push({
         id: node.id,
         label: labelSingleLine(node.label),
+        version: modelVersionTag(node) || "",
         score: best,
         alias: matchedAlias,
       });
@@ -1757,8 +1822,34 @@ const resolveModelIdFromText = (raw = "") => {
 };
 const linkModelEntities = (question = "", { threshold = MODEL_CANDIDATE_THRESHOLD, maxCandidates = 6 } = {}) => {
   const modelNodes = NODES.filter((n) => n.type === "Model");
+  const qLower = String(question || "").toLowerCase();
+  const globalRequestedVersion = extractVersionTag(question);
+  const requestedFamilies = modelIdsMentionedByFamilyAlias(question);
+  const requestedVersionByModel = {};
+  for (const rule of MODEL_FAMILY_RULES) {
+    let ver = "";
+    for (const a of rule.aliases) {
+      const escaped = a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`${escaped}\\s*[- ]?v\\s*([0-9]+(?:\\.[0-9]+)*)`, "i");
+      const m = qLower.match(re);
+      if (m?.[1]) {
+        ver = `v${m[1]}`;
+        break;
+      }
+    }
+    if (ver) {
+      rule.ids.forEach((id) => {
+        requestedVersionByModel[id] = ver;
+      });
+    }
+  }
   const ranked = [];
   for (const node of modelNodes) {
+    if (requestedFamilies.length && !requestedFamilies.includes(node.id)) continue;
+    const requestedVersion = requestedVersionByModel[node.id] || globalRequestedVersion || "";
+    const nodeVer = modelVersionTag(node);
+    if (requestedVersion && nodeVer && !versionMatches(requestedVersion, nodeVer)) continue;
+    if (requestedVersion && !nodeVer) continue;
     const aliases = new Set([
       labelSingleLine(node.label),
       node.id,
@@ -1777,6 +1868,7 @@ const linkModelEntities = (question = "", { threshold = MODEL_CANDIDATE_THRESHOL
       ranked.push({
         id: node.id,
         label: labelSingleLine(node.label),
+        version: nodeVer || "",
         score: best,
         alias: matchedAlias,
       });
@@ -1858,6 +1950,7 @@ Return JSON only with schema:
 Rules:
 - Allowed intents: ${INTENT_ENUM.join(", ")}
 - Prefer atomic retrieval intents first: search_nodes, get_neighbors, extract_donors, set_operation.
+- For node-information questions (owner/contact/email/path/version/status/responsible), do NOT stop at search_nodes; follow with node_detail on the best matched node before answering.
 - Use linked_entities as a high-priority grounding hint for canonical IDs when provided.
 - For donor-attribute statistics questions (e.g., T1D/ND/White count or ratio), use donor_attribute_ratio after obtaining donor set evidence.
 - For inventory/list questions ("what raw data/datasets/models exist"), prefer list_nodes_by_type first, then drill down.
@@ -1906,8 +1999,13 @@ const detectNodeTypeFromQuestion = (q = "") => {
 };
 const parseInventoryRequest = (q = "") => {
   const s = normalizeQ(q);
+  const isPipelineQuestion = qHasAny(s, ["pipeline", "qc", "produced", "生成", "流程"]);
+  if (isPipelineQuestion) return null;
   const asksList = qHasAny(s, ["what", "which", "list", "哪些", "有哪些", "show", "列出"]);
   const nodeType = detectNodeTypeFromQuestion(s);
+  const hasModelContext = qHasAny(s, ["model", "fm", "foundation model", "模型", "scfm", "genomic fm", "spatial fm", "protein fm"]);
+  // Do not treat model-specific dataset questions as generic inventory listing.
+  if (hasModelContext && nodeType === "ProcessedData") return null;
   if (!asksList || !nodeType) return null;
   const donorCode = (String(q).toUpperCase().match(/HPAP[-_\s]?\d{1,3}/)?.[0] || "").replace(/[_\s]/g, "-");
   const query = donorCode || (qHas(s, "hpap") ? "hpap" : "");
@@ -1989,7 +2087,38 @@ const formatIntentAnswer = (intent, params, result) => {
     case "provenance_chain":
       return `Provenance chain contains ${rows.length} node(s):\n${rows.slice(0, 20).map((r, i) => `${i + 1}. ${r.label} [${r.type}]`).join("\n")}`;
     case "node_detail":
-      return `Node found:\n${rows.map((r) => `- ${r.label} (${r.type})`).join("\n")}`;
+      return rows
+        .map((r) => {
+          const detail = r?.detail && typeof r.detail === "object" ? r.detail : {};
+          const preferredKeys = [
+            "Contact", "Owner", "email", "Email", "path", "Path", "Version", "version",
+            "Institution", "institution", "Updated", "updated", "Status", "status",
+            "clinical_diagnosis", "Ethnicities", "Donor",
+          ];
+          const normalized = Object.entries(detail).map(([k, v]) => [String(k), v]);
+          const picked = [];
+          const used = new Set();
+          preferredKeys.forEach((k) => {
+            const hit = normalized.find(([kk]) => kk.toLowerCase() === k.toLowerCase());
+            if (hit && !used.has(hit[0])) {
+              picked.push(hit);
+              used.add(hit[0]);
+            }
+          });
+          normalized.forEach(([k, v]) => {
+            if (!used.has(k)) picked.push([k, v]);
+          });
+          const detailLines = picked
+            .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+            .slice(0, 20)
+            .map(([k, v]) => `  - ${k}: ${String(v)}`);
+          return [
+            `Node: ${r.label} [${r.type}]`,
+            detailLines.length ? "Properties:" : "Properties: (none)",
+            ...detailLines,
+          ].join("\n");
+        })
+        .join("\n\n");
     case "shared_donors_three_fms": {
       const s = result?.summary || {};
       const head = `Found ${rows.length} donor(s) shared across training sets of Genomic FM, Single-cell FM, and Spatial FM.`;
