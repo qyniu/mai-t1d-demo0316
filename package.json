@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:agent:r1-r10": "node scripts/regression-r1-r10.mjs"
   },
   "dependencies": {
     "@langchain/core": "^1.1.39",

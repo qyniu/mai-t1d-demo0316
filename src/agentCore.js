@@ -24,11 +24,39 @@ function queryGraph(intent, params) {
     if (byNormalizedId) return byNormalizedId;
     const byNormalizedLabel = pool.find((n) => normalizeEntityKey(labelSingleLine(n.label)) === qNorm);
     if (byNormalizedLabel) return byNormalizedLabel;
-    return (
-      pool.find((n) => labelSingleLine(n.label).toLowerCase().includes(q)) ||
-      pool.find((n) => normalizeEntityKey(n.id).includes(qNorm) || normalizeEntityKey(labelSingleLine(n.label)).includes(qNorm)) ||
-      null
-    );
+    const byPartial = pool.find((n) => labelSingleLine(n.label).toLowerCase().includes(q));
+    if (byPartial) return byPartial;
+    const byNormalizedPartial = pool.find((n) => normalizeEntityKey(n.id).includes(qNorm) || normalizeEntityKey(labelSingleLine(n.label)).includes(qNorm));
+    if (byNormalizedPartial) return byNormalizedPartial;
+
+    // Long-question fallback: recover entity mentions from sentence-like inputs.
+    const stop = new Set([
+      "what", "which", "who", "where", "when", "how", "why", "is", "are", "was", "were",
+      "the", "a", "an", "of", "in", "on", "for", "to", "by", "with", "from", "and", "or",
+      "data", "dataset", "datasets", "model", "models", "change", "changed", "affected", "impact", "impacted",
+    ]);
+    const tokenize = (s = "") =>
+      String(s || "")
+        .toLowerCase()
+        .split(/[^a-z0-9]+/g)
+        .filter((t) => t && t.length >= 3 && !stop.has(t));
+    const qTokens = tokenize(raw);
+    if (!qTokens.length) return null;
+    let bestNode = null;
+    let bestScore = 0;
+    for (const n of pool) {
+      const nodeTokens = new Set(tokenize(`${n.id} ${labelSingleLine(n.label)}`));
+      if (!nodeTokens.size) continue;
+      let overlap = 0;
+      qTokens.forEach((t) => {
+        if (nodeTokens.has(t)) overlap += 1;
+      });
+      if (overlap > bestScore) {
+        bestScore = overlap;
+        bestNode = n;
+      }
+    }
+    return bestScore >= 2 ? bestNode : null;
   };
   const donorIdsForModelTraining = (modelId) => {
     if (!modelId) return new Set();
@@ -408,13 +436,40 @@ function queryGraph(intent, params) {
       const datasetNode =
         resolveNode(params.datasetId, ["ProcessedData"]) ||
         resolveNode(params.query, ["ProcessedData"]);
-      const datasetId = datasetNode?.id || params.datasetId;
+      const inputDatasetId = datasetNode?.id || params.datasetId;
+      if (!inputDatasetId) return { rows:[] };
+      const datasetId = parentDatasetOfSplit(String(inputDatasetId));
       const genEdge = EDGES.find(
         e => (e.label==="GENERATED_BY" || e.label==="WAS_GENERATED_BY") && edgeTgtId(e)===datasetId
       );
-      if (!genEdge) return { rows:[] };
+      if (!genEdge) return {
+        rows: [],
+        summary: {
+          datasetId,
+          inputDatasetId,
+          resolvedFromSplit: String(inputDatasetId) !== String(datasetId),
+        },
+      };
       const pipeline = NODES.find(n=>n.id===edgeSrcId(genEdge));
-      return { rows: pipeline ? [{ id:pipeline.id, label:labelSingleLine(pipeline.label), detail:pipeline.detail }] : [] };
+      const datasetResolved = NODES.find((n) => n.id === datasetId);
+      return {
+        rows: pipeline ? [{
+          id: pipeline.id,
+          label: labelSingleLine(pipeline.label),
+          detail: pipeline.detail,
+          datasetId,
+          datasetLabel: labelSingleLine(datasetResolved?.label || datasetId),
+          inputDatasetId,
+          resolvedFromSplit: String(inputDatasetId) !== String(datasetId),
+        }] : [],
+        summary: {
+          datasetId,
+          datasetLabel: labelSingleLine(datasetResolved?.label || datasetId),
+          inputDatasetId,
+          resolvedFromSplit: String(inputDatasetId) !== String(datasetId),
+          pipelineId: pipeline?.id || "",
+        },
+      };
     }
     case "downstream_tasks": {
       const modelNode =
@@ -1246,33 +1301,133 @@ function queryGraph(intent, params) {
       };
     }
     case "search_nodes": {
-      const query = String(params.query || params.q || params.text || "").trim().toLowerCase();
-      const queryNorm = normalizeEntityKey(query);
-      const typeHints = asArray(
-        params.typeHints || params.types || params.node_types || params.node_type || params.type
+      const rawQuery = String(params.query || params.q || params.text || "").trim();
+      const query = rawQuery.toLowerCase();
+      const queryNorm = normalizeEntityKey(rawQuery);
+      const donorCodeMatch = rawQuery.toUpperCase().match(/HPAP[-_\s]?(\d{1,3})/);
+      const donorCode = donorCodeMatch ? `HPAP-${String(Number(donorCodeMatch[1])).padStart(3, "0")}` : "";
+      const donorCodeNorm = donorCode ? normalizeEntityKey(donorCode) : "";
+      const metadataLikeQuery = /\b(metadata|meta\s*data|detail|details|properties|property|full\s*record)\b/i.test(rawQuery);
+      const preferredTypes = asArray(
+        params.preferredTypes ||
+        params.typeHints ||
+        params.types ||
+        params.node_types ||
+        params.node_type ||
+        params.type
       ).map((t) => String(t || "").toLowerCase());
       const limit = Math.max(1, Math.min(Number(params.limit || 20), 100));
-      if (!query) return { rows: [] };
-      const score = (node) => {
-        const id = String(node.id || "").toLowerCase();
-        const label = labelSingleLine(node.label).toLowerCase();
+      if (!rawQuery) return { rows: [] };
+
+      const tokenize = (s = "") =>
+        String(s || "")
+          .toLowerCase()
+          .split(/[^a-z0-9]+/g)
+          .filter((t) => t.length >= 2);
+      const queryTokens = tokenize(rawQuery);
+      const detailEntries = (node) =>
+        Object.entries(node?.detail || {})
+          .map(([k, v]) => [String(k), String(v ?? "").trim()])
+          .filter(([, v]) => v);
+      const detailText = (node) => detailEntries(node).map(([k, v]) => `${k} ${v}`).join(" ").toLowerCase();
+      const buildDetailPreview = (node) => {
+        const entries = detailEntries(node);
+        if (!entries.length) return {};
+        const scored = entries
+          .map(([k, v]) => {
+            const txt = `${k} ${v}`.toLowerCase();
+            let s = 0;
+            if (txt.includes(query)) s += 2;
+            if (queryNorm && normalizeEntityKey(txt).includes(queryNorm)) s += 2;
+            return { k, v, s };
+          })
+          .sort((a, b) => b.s - a.s || a.k.localeCompare(b.k))
+          .slice(0, 4);
+        const out = {};
+        scored.forEach(({ k, v }) => { out[k] = v; });
+        return out;
+      };
+
+      const scoreNode = (node) => {
+        const id = String(node.id || "");
+        const label = labelSingleLine(node.label || "");
+        const type = String(node.type || "");
+        const idLower = id.toLowerCase();
+        const labelLower = label.toLowerCase();
         const idNorm = normalizeEntityKey(id);
         const labelNorm = normalizeEntityKey(label);
-        if (id === query || label === query) return 100;
-        if (idNorm === queryNorm || labelNorm === queryNorm) return 95;
-        if (id.startsWith(query) || label.startsWith(query)) return 80;
-        if (idNorm.startsWith(queryNorm) || labelNorm.startsWith(queryNorm)) return 75;
-        if (id.includes(query) || label.includes(query)) return 60;
-        if (idNorm.includes(queryNorm) || labelNorm.includes(queryNorm)) return 55;
-        return 0;
+        const dText = detailText(node);
+        const dNorm = normalizeEntityKey(dText);
+
+        let score = 0;
+        const matchedBy = [];
+        const add = (pts, why) => {
+          score += pts;
+          if (!matchedBy.includes(why)) matchedBy.push(why);
+        };
+
+        if (idLower === query) add(140, "id_exact");
+        if (idNorm && idNorm === queryNorm) add(120, "id_normalized");
+        if (labelLower === query) add(115, "label_exact");
+        if (labelNorm && labelNorm === queryNorm) add(105, "label_normalized");
+
+        if (idLower.startsWith(query)) add(90, "id_prefix");
+        if (labelLower.startsWith(query)) add(88, "label_prefix");
+        if (queryNorm && idNorm.includes(queryNorm)) add(76, "id_partial_normalized");
+        if (queryNorm && labelNorm.includes(queryNorm)) add(74, "label_partial_normalized");
+        if (idLower.includes(query)) add(72, "id_partial");
+        if (labelLower.includes(query)) add(70, "label_partial");
+
+        if (dText.includes(query)) add(50, "detail_partial");
+        if (queryNorm && dNorm.includes(queryNorm)) add(45, "detail_partial_normalized");
+
+        if (queryTokens.length) {
+          const nodeTokenSet = new Set(tokenize(`${id} ${label} ${type} ${dText}`));
+          let overlap = 0;
+          queryTokens.forEach((t) => {
+            if (nodeTokenSet.has(t)) overlap += 1;
+          });
+          if (overlap > 0) add(Math.min(24, 8 + overlap * 4), `token_overlap_${overlap}`);
+        }
+
+        if (donorCodeNorm) {
+          const isDonorId = idLower.startsWith("donor_hpap_");
+          const isDonorType = type.toLowerCase() === "donor";
+          const isSampleLike = idLower.startsWith("sample_") || labelLower.includes("replicate") || labelLower.includes("sample");
+          const labelNormEqDonor = labelNorm === donorCodeNorm;
+          const idNormHasDonor = idNorm.includes(`donor${donorCodeNorm}`) || idNorm.endsWith(donorCodeNorm);
+          const labelNormHasDonor = labelNorm.includes(donorCodeNorm);
+          if (isDonorId && (idNormHasDonor || labelNormEqDonor || labelNormHasDonor)) add(95, "donor_code_preferred");
+          if (isDonorType && (labelNormEqDonor || labelNormHasDonor)) add(85, "donor_type_preferred");
+          if (labelNormEqDonor && !isSampleLike) add(70, "donor_label_exact");
+          if (metadataLikeQuery && isSampleLike && labelNormHasDonor) add(-55, "sample_penalty_for_metadata_query");
+        }
+
+        if (preferredTypes.length && preferredTypes.includes(type.toLowerCase())) add(8, "preferred_type");
+        return { score, matchedBy };
       };
-      const rows = NODES
-        .filter((n) => !typeHints.length || typeHints.includes(String(n.type || "").toLowerCase()))
-        .map((n) => ({ node: n, s: score(n) }))
-        .filter((x) => x.s > 0)
-        .sort((a, b) => b.s - a.s || String(a.node.id).localeCompare(String(b.node.id)))
-        .slice(0, limit)
-        .map((x) => ({ ...nodeRow(x.node), score: x.s }));
+
+      const scopedNodes = (() => {
+        if (!preferredTypes.length) return NODES;
+        const preferred = NODES.filter((n) => preferredTypes.includes(String(n.type || "").toLowerCase()));
+        return preferred.length ? preferred : NODES;
+      })();
+
+      const rows = scopedNodes
+        .map((n) => {
+          const { score, matchedBy } = scoreNode(n);
+          return {
+            id: n.id,
+            label: labelSingleLine(n.label),
+            type: n.type,
+            score,
+            matchedBy,
+            detailPreview: buildDetailPreview(n),
+          };
+        })
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score || String(a.id).localeCompare(String(b.id)))
+        .slice(0, limit);
       return { rows };
     }
     case "list_nodes_by_type": {
@@ -1340,6 +1495,10 @@ function queryGraph(intent, params) {
         EDGES
           .filter((e) => e.label === "HAD_MEMBER" && edgeSrcId(e) === startNode.id)
           .forEach((e) => addSample(edgeTgtId(e)));
+      } else if (String(startNode.type) === "Pipeline" || String(startNode.type) === "QCPipeline") {
+        // If pipeline is the entry, directly include datasets generated by this pipeline.
+        // This enables Pipeline -> ProcessedData -> Model -> DownstreamTask impact propagation.
+        // We still allow later logic to expand to split/parent datasets via DERIVED_FROM.
       }
 
       // Dataset closure only from anchor samples (prevents cross-donor sample fan-out).
@@ -1354,6 +1513,15 @@ function queryGraph(intent, params) {
           });
       });
       if (String(startNode.type) === "ProcessedData") datasetIds.add(startNode.id);
+      if (String(startNode.type) === "Pipeline" || String(startNode.type) === "QCPipeline") {
+        EDGES
+          .filter((e) => (e.label === "GENERATED_BY" || e.label === "WAS_GENERATED_BY") && edgeSrcId(e) === startNode.id)
+          .forEach((e) => {
+            const dsId = edgeTgtId(e);
+            const dsNode = NODES.find((n) => n.id === dsId);
+            if (dsNode && String(dsNode.type) === "ProcessedData") datasetIds.add(dsId);
+          });
+      }
 
       // Include split/parent dataset variants along DERIVED_FROM links.
       let changed = true;
@@ -2055,6 +2223,142 @@ if (typeof window !== "undefined") {
   };
 }
 
+const buildGraphOntologyContext = () => {
+  const nodeById = new Map(NODES.map((n) => [n.id, n]));
+  const countBy = (items, keyFn) => {
+    const out = new Map();
+    items.forEach((x) => {
+      const k = String(keyFn(x) || "Unknown");
+      out.set(k, (out.get(k) || 0) + 1);
+    });
+    return out;
+  };
+  const sortedCountLines = (m, limit = 20) =>
+    [...m.entries()]
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .slice(0, limit)
+      .map(([k, v]) => `${k}:${v}`);
+
+  const nodeTypeCounts = countBy(NODES, (n) => n.type);
+  const edgeLabelCounts = countBy(EDGES, (e) => e.label);
+
+  const modelNodes = NODES
+    .filter((n) => String(n.type) === "Model" || String(n.type) === "FineTunedModel")
+    .map((n) => `${n.id} | ${labelSingleLine(n.label)}`)
+    .slice(0, 20);
+
+  const datasetLikeNodes = NODES
+    .filter((n) => {
+      const t = String(n.type || "");
+      const id = String(n.id || "");
+      const lbl = labelSingleLine(n.label).toLowerCase();
+      const isSampleOrDonor = id.startsWith("sample_") || id.startsWith("donor_");
+      if (isSampleOrDonor) return false;
+      if (t === "ProcessedData") return true;
+      if (t === "RawData" && (id.startsWith("cohort_") || lbl.includes("dataset"))) return true;
+      return false;
+    })
+    .map((n) => `${n.id} | ${labelSingleLine(n.label)} | ${n.type}`)
+    .slice(0, 30);
+
+  const pipelineNodes = NODES
+    .filter((n) => {
+      const t = String(n.type || "");
+      return t === "Pipeline" || t === "QCPipeline";
+    })
+    .map((n) => `${n.id} | ${labelSingleLine(n.label)}`)
+    .slice(0, 20);
+
+  const donorIdCandidates = NODES
+    .map((n) => String(n.id || ""))
+    .filter((id) => /^donor[-_]?hpap[-_]?\d{1,3}$/i.test(id));
+  const donorLabelCandidates = NODES
+    .map((n) => labelSingleLine(n.label))
+    .filter((label) => /\bHPAP[-_\s]?\d{1,3}\b/i.test(label));
+  const donorPatternLine =
+    donorIdCandidates.length || donorLabelCandidates.length
+      ? `id_pattern=donor_hpap_### example=${donorIdCandidates[0] || "n/a"} ; label_pattern=HPAP-### example=${(donorLabelCandidates[0] || "").match(/HPAP[-_\s]?\d{1,3}/i)?.[0] || "n/a"}`
+      : "not_detected";
+
+  const typedEdges = EDGES
+    .map((e) => {
+      const srcId = edgeSrcId(e);
+      const tgtId = edgeTgtId(e);
+      const srcType = String(nodeById.get(srcId)?.type || "Unknown");
+      const tgtType = String(nodeById.get(tgtId)?.type || "Unknown");
+      const label = String(e.label || "UNKNOWN");
+      return { srcId, tgtId, srcType, tgtType, label };
+    });
+  const transitionCounts = countBy(typedEdges, (e) => `${e.srcType} -${e.label}-> ${e.tgtType}`);
+  const outBySourceId = new Map();
+  typedEdges.forEach((e) => {
+    if (!outBySourceId.has(e.srcId)) outBySourceId.set(e.srcId, []);
+    outBySourceId.get(e.srcId).push(e);
+  });
+  const chain2Counts = new Map();
+  typedEdges.forEach((e1) => {
+    const outs = outBySourceId.get(e1.tgtId) || [];
+    outs.forEach((e2) => {
+      const key = `${e1.srcType} -${e1.label}-> ${e1.tgtType} -${e2.label}-> ${e2.tgtType}`;
+      chain2Counts.set(key, (chain2Counts.get(key) || 0) + 1);
+    });
+  });
+  const transitionLines = sortedCountLines(transitionCounts, 8);
+  const chain2Lines = sortedCountLines(chain2Counts, 8);
+
+  const pathCandidateChecks = [
+    {
+      name: "RawData -> Pipeline -> ProcessedData -> Model -> DownstreamTask",
+      required: [
+        ["RawData", "Pipeline"],
+        ["Pipeline", "ProcessedData"],
+        ["ProcessedData", "Model"],
+        ["Model", "DownstreamTask"],
+      ],
+    },
+    {
+      name: "Donor/Sample -> Dataset -> Model",
+      required: [
+        ["RawData", "ProcessedData"],
+        ["ProcessedData", "Model"],
+      ],
+    },
+    {
+      name: "Dataset -> DatasetCard",
+      required: [["ProcessedData", "DatasetCard"]],
+    },
+    {
+      name: "Model -> ModelCard",
+      required: [["Model", "ModelCard"]],
+    },
+  ];
+  const typePairSet = new Set(typedEdges.map((e) => `${e.srcType}->${e.tgtType}`));
+  const commonPaths = pathCandidateChecks
+    .filter((p) => p.required.every(([a, b]) => typePairSet.has(`${a}->${b}`)))
+    .map((p) => p.name);
+
+  return [
+    "Graph ontology summary (auto-derived from NODES/EDGES):",
+    `Node types (${nodeTypeCounts.size}): ${sortedCountLines(nodeTypeCounts, 20).join(", ") || "none"}`,
+    `Edge labels (${edgeLabelCounts.size}): ${sortedCountLines(edgeLabelCounts, 20).join(", ") || "none"}`,
+    `Known model nodes (${modelNodes.length}):`,
+    modelNodes.length ? modelNodes.map((x) => `- ${x}`).join("\n") : "- none",
+    `Known dataset/modality-like nodes (${datasetLikeNodes.length}):`,
+    datasetLikeNodes.length ? datasetLikeNodes.map((x) => `- ${x}`).join("\n") : "- none",
+    `Known pipeline nodes (${pipelineNodes.length}):`,
+    pipelineNodes.length ? pipelineNodes.map((x) => `- ${x}`).join("\n") : "- none",
+    `Known donor ID pattern: ${donorPatternLine}`,
+    "Common graph paths inferred from edge labels:",
+    commonPaths.length ? commonPaths.map((x) => `- ${x}`).join("\n") : "- none matched from predefined path families",
+    "Top typed transitions:",
+    transitionLines.length ? transitionLines.map((x) => `- ${x}`).join("\n") : "- none",
+    "Top 2-hop typed chains:",
+    chain2Lines.length ? chain2Lines.map((x) => `- ${x}`).join("\n") : "- none",
+  ].join("\n");
+};
+
+const GRAPH_ONTOLOGY_CONTEXT = buildGraphOntologyContext();
+
 //  AGENT VIEW 
 const GRAPH_CONTEXT = `
 You are a governance agent for the MAI-T1D (Multimodal AI for Type 1 Diabetes) project knowledge graph.
@@ -2159,11 +2463,181 @@ const INTENT_ENUM = [
   "impact_downstream",
 ];
 
+const AGENT_INTENT_GUIDE = `
+Intent selection guide (semantic, not keyword matching):
+
+1) datasets_for_model
+Purpose: find datasets linked to a model via TRAINED_ON.
+Use when: user asks what data/datasets a model used for training/evaluation context.
+Do not use when: user asks for model details, donor overlap, or downstream tasks only.
+Required params: modelId (preferred canonical id); optional query.
+Examples:
+- "What datasets were used to train Genomic FM?"
+- "Which data inputs does model_scfm use?"
+- "Show training datasets for Spatial FM."
+Expected result shape: { rows:[{ id, label, type, trainMeta? }] }.
+
+2) models_for_dataset
+Purpose: find models connected to a dataset via TRAINED_ON/EVALUATED_ON.
+Use when: user asks which models use a dataset/modality.
+Do not use when: user asks for QC pipeline ownership or dataset card metadata only.
+Required params: datasetId or query/datasetType.
+Examples:
+- "Which models use scRNA-seq dataset?"
+- "What models were trained or evaluated on proc_scrna_v1?"
+- "Who uses this dataset downstream?"
+Expected result shape: { rows:[{ id, label, type, usage:[...], via:[...] }] }.
+
+3) provenance_chain
+Purpose: traverse lineage neighborhood for an entity.
+Use when: user asks end-to-end trace/lineage/provenance chain.
+Do not use when: user asks a single-hop fact (owner, single list, one relation only).
+Required params: one of nodeId/modelId/datasetId/query.
+Examples:
+- "Show provenance chain for model_genomic."
+- "Trace lineage for proc_snmultiomics_v1."
+- "What is the end-to-end chain for this node?"
+Expected result shape: { rows:[{ id, label, type, depth?, via? }], summary? }.
+
+4) impact_downstream
+Purpose: estimate downstream impact from changing an entity (donor/sample/dataset/model).
+Use when: user asks what would be affected/impacted downstream by a change.
+Do not use when: user asks only overlap or ratio without impact semantics.
+Required params: query or entityId/nodeId/donorCode; optional depth.
+Examples:
+- "If HPAP-010 changes diagnosis, what is impacted downstream?"
+- "What models/tasks are affected if proc_bulk_rna_v1 is revised?"
+- "Downstream impact of changing this dataset?"
+Expected result shape: { rows:[...impacted nodes...], summary:{ found, impactedSampleCount, impactedDatasetCount, impactedModelCount, impactedTaskCount, ... } }.
+
+5) training_donor_overlap_between_models
+Purpose: compute donor overlap between two models' training sets.
+Use when: user explicitly compares two models' training donor overlap.
+Do not use when: user asks generic donor list for one model or non-donor overlap.
+Required params: modelAId, modelBId; optional splitA/splitB (defaults training intent).
+Examples:
+- "How many donors overlap between Genomic FM and Spatial FM training sets?"
+- "Shared training donors for model_genomic vs model_scfm?"
+- "Compare training donor intersection between two models."
+Expected result shape: { rows:[{ id, label, type }], summary:{ modelAId, modelBId, overlapCount, modelADonorCount, modelBDonorCount, overlapRatioA, overlapRatioB } }.
+
+6) donor_overlap_between_models
+Purpose: general donor overlap between two model scopes/splits.
+Use when: user asks donor overlap but split may vary or wording is generic.
+Do not use when: overlap is not donor-based.
+Required params: modelAId, modelBId; optional splitA/splitB.
+Examples:
+- "Donor overlap between Genomic FM and scFM."
+- "Shared donors in evaluation splits of two models."
+- "Intersection of donor cohorts between these models."
+Expected result shape: { rows:[{ id, label, type }], summary:{ overlapCount, splitA, splitB, ... } }.
+
+7) embedding_leakage_between_models
+Purpose: analyze potential embedding reuse leakage between source/target models.
+Use when: user asks about cross-model embedding leakage/reuse risk.
+Do not use when: user asks ordinary donor overlap without embedding semantics.
+Required params: modelAId/modelBId or sourceModelId/targetModelId; optional sourceSplit/targetTrainSplit/targetUseSplit/requireEmbeddingUsage.
+Examples:
+- "Is there embedding leakage from scFM to Genomic FM?"
+- "Cross-model embedding reuse risk between model_scfm and model_genomic?"
+- "Which donors could leak via embeddings across two models?"
+Expected result shape: { rows:[{ id, label, type }], summary:{ leakageDonorCount, directionCount, directions:[...], ... } }.
+
+8) reclassification_distribution_impact
+Purpose: simulate donor diagnosis/stage reclassification impact on distribution balance.
+Use when: user asks what-if reclassification effects on ratios/distribution.
+Do not use when: user asks only current static ratio without hypothetical change.
+Required params: scopeType (model|modality|dataset|donor_set), scopeRef, split; reclassification inputs (rangeStart/rangeEnd/rangeTo or donorReclassifications list).
+Examples:
+- "If HPAP-010 to HPAP-020 become T1D, how does Genomic FM training distribution change?"
+- "What happens to donor balance if these donors are reclassified to ND?"
+- "Impact on T1D:ND ratio after donor reclassification in scRNA modality."
+Expected result shape: { rows:[{ donorId, donorCode, oldTag, newTag, changed }], summary:{ before, after, shift, donorCount, changedCount, impactedModels?, impactedTasks?, ... } }.
+
+9) donor_attribute_ratio
+Purpose: compute donor attribute count/ratio/distribution (diagnosis or ethnicity).
+Use when: user asks proportion/count/distribution for donor attributes in a scope.
+Do not use when: user asks model-dataset linkage, provenance chain, or node owner.
+Required params: either donorIds or modelId (or other scope fields supported by queryGraph); attribute/targetValue; optional askType and split.
+Examples:
+- "What proportion of T1D donors are in Genomic FM training set?"
+- "How many ND donors are in this donor set?"
+- "Diagnosis distribution for donors used here."
+Expected result shape: { rows:[{ id, label, type, ... }], summary:{ totalDonors, matchedDonors, ratio, composition, mode, askType, split } }.
+
+10) pipeline_for_dataset
+Purpose: map dataset to producing pipeline (GENERATED_BY/WAS_GENERATED_BY).
+Use when: user asks which pipeline produced a dataset.
+Do not use when: user asks who owns a pipeline version family without dataset anchor.
+Required params: datasetId or query.
+Examples:
+- "Which pipeline produced proc_scrna_v1?"
+- "What QC pipeline generated this dataset?"
+- "Pipeline lineage for scRNA dataset."
+Expected result shape: { rows:[{ id, label, detail }] }.
+
+11) qc_pipeline_for_model_modality
+Purpose: find QC pipeline(s) in the training lineage for model + modality context.
+Use when: user asks model-specific QC lineage by modality.
+Do not use when: user only asks model training datasets or generic pipeline inventory.
+Required params: modelId; optional modality and split.
+Examples:
+- "What QC pipeline produced scRNA used by Genomic FM?"
+- "QC lineage for model_scfm with snMultiomics."
+- "Which QC pipeline is upstream of this model's training data?"
+Expected result shape: { rows:[{ datasetId, datasetLabel, pipelineId, pipelineLabel, pipelineDetail }], summary:{ modelId, modality?, trainingLinked } }.
+
+12) qc_pipeline_owner
+Purpose: retrieve owner/contact metadata for QC pipeline(s), optionally by version query.
+Use when: user asks who is responsible/contact/email for a pipeline.
+Do not use when: user asks dataset-model relation without owner/contact request.
+Required params: query (pipeline name/version text) and/or pipelineId.
+Examples:
+- "Who is responsible for scRNA QC pipeline v1?"
+- "Contact for qc_bulk_rna pipeline?"
+- "Owner and email of this QC workflow."
+Expected result shape: { rows:[{ pipelineId, pipelineLabel, version, contact, email }], summary? }.
+
+13) node_detail
+Purpose: return detailed properties of a specific node.
+Use when: user asks owner/contact/path/version/status or rich metadata of an entity.
+Do not use when: user asks relationship traversal across graph.
+Required params: nodeId (preferred) or resolvable query.
+Examples:
+- "Show details for model_genomic."
+- "What is the status/version/contact of dc_scrna_v1?"
+- "Give full metadata for qc_scatac."
+Expected result shape: { rows:[{ id, label, type, detail:{...} }] }.
+
+14) search_nodes
+Purpose: broad fuzzy lookup to find candidate entities by id/label/text.
+Use when: entity is ambiguous, unknown, or first-step grounding is needed.
+Do not use when: intent-specific structured query is already clear.
+Required params: query; optional preferredTypes, limit.
+Examples:
+- "Find nodes related to HPAP-010."
+- "Search for Genomic FM entities."
+- "Locate scRNA dataset node."
+Expected result shape: { rows:[{ id, label, type, score, matchedBy:[...], detailPreview:{...} }] }.
+`;
+
 const AGENT_TOOLS = [
-  { name:"queryGraph", description:"Execute a structured read-only query against the MAI-T1D provenance graph",
+  { name:"queryGraph", description:"Execute a structured read-only query against the MAI-T1D provenance graph. Choose intent from semantic fit using user question plus graph context.",
     input_schema:{ type:"object", properties:{
-      intent:{ type:"string", enum:INTENT_ENUM, description:"Query intent to execute" },
-      params:{ type:"object", description:"Intent parameters. Prefer explicit IDs when available; otherwise pass natural-language query text." }
+      intent:{
+        type:"string",
+        enum:INTENT_ENUM,
+        description:`Query intent to execute.
+
+Use this intent catalog to pick the best operation:
+${AGENT_INTENT_GUIDE}
+
+If multiple intents seem plausible, choose the most specific one that directly matches the user's analytical goal and expected result shape.`
+      },
+      params:{
+        type:"object",
+        description:"Intent parameters. Prefer canonical IDs (modelId, datasetId, nodeId, donorCode) when available; otherwise use compact query text. Include split/scope fields when the question implies training/evaluation or what-if scope."
+      }
     }, required:["intent","params"] }
   }
 ];
@@ -2502,24 +2976,31 @@ Return JSON only with schema:
   "confidence":0.0
 }
 
-Rules:
-- Allowed intents: ${INTENT_ENUM.join(", ")}
-- Prefer atomic retrieval intents first: search_nodes, get_neighbors, extract_donors, set_operation.
-- For node-information questions (owner/contact/email/path/version/status/responsible), do NOT stop at search_nodes; follow with node_detail on the best matched node before answering.
-- Use linked_entities as a high-priority grounding hint for canonical IDs when provided.
-- For donor-attribute statistics questions (e.g., T1D/ND/White count or ratio), use donor_attribute_ratio after obtaining donor set evidence.
-- For embedding leakage / cross-model embedding reuse questions, use embedding_leakage_between_models.
-- For hypothetical donor reclassification impact questions ("if HPAP-xxx becomes T1D"), use reclassification_distribution_impact.
-- For inventory/list questions ("what raw data/datasets/models exist"), prefer list_nodes_by_type first, then drill down.
-- For change-impact questions ("X changed, what downstream models/data are impacted"), use impact_downstream first.
-- Use domain intents only when they directly and fully match the question.
-- If question compares multiple entities (overlap/intersection/shared/simultaneously), do NOT use single-entity intents.
-- If question asks donors shared by all FMs, use extract_donors with {scope:"all_models", split:"training|evaluation", combine:"intersection"}.
-- Normalize aliases first (e.g., "sc FM" => model_scfm).
-- For two-model donor-overlap questions, prefer donor_overlap_between_models with explicit model IDs and split.
-- Use "tool" when more evidence is needed.
-- Use "answer" only when existing evidence is sufficient.
-- Use "clarify" only if required entity/constraint is missing.
+Planning process:
+1) Infer the governance task from the user question.
+2) Select the best queryGraph intent by matching the task to intent/tool descriptions and expected result shape.
+3) Use linked_entities and prior evidence to fill canonical IDs and scope.
+4) If the user mentions an entity but exact graph ID is unclear, ambiguous, or unresolved, you MUST choose search_nodes first before a final governance intent.
+5) Prefer high-level governance intents over low-level graph traversal when a high-level intent directly fits.
+
+Available intents: ${INTENT_ENUM.join(", ")}
+
+Intent and parameter guide:
+${AGENT_INTENT_GUIDE}
+
+Current graph ontology/context (auto-derived):
+${GRAPH_ONTOLOGY_CONTEXT}
+
+Decision policy:
+- Use previous tool results (evidence) before issuing another query; avoid redundant repeats.
+- If entity resolution is uncertain at the current step, run search_nodes first; do not skip directly to a final governance intent.
+- Choose high-level intents when they can answer directly (for example datasets_for_model, models_for_dataset, impact_downstream, qc_pipeline_for_model_modality, qc_pipeline_owner, donor_attribute_ratio, reclassification_distribution_impact, embedding_leakage_between_models).
+- Use low-level intents (get_neighbors, set_operation, extract_donors) only when high-level intents cannot directly satisfy the task or when decomposition is required.
+- For entity-centric metadata questions, retrieve node_detail after entity resolution.
+- For model-targeted intents, use canonical modelId when available from linked_entities or prior evidence.
+- Use "tool" when another query is needed.
+- Use "answer" only when evidence is sufficient to answer faithfully.
+- Use "clarify" only when a required constraint/entity cannot be reasonably inferred.
 - Never output non-JSON text.
 `;
 const AGENT_LANGGRAPH_ANSWER_SYSTEM = `
@@ -2527,6 +3008,7 @@ You are the answer node in a LangGraph-style governance agent.
 Use only provided tool evidence to answer.
 If evidence is insufficient, explicitly say what is missing in the current graph.
 Do not describe internal reasoning steps.
+Always answer in English.
 
 When evidence includes "reclassification_distribution_impact":
 - Prefer an analysis-style answer over rigid template text.
@@ -2537,7 +3019,6 @@ When evidence includes "reclassification_distribution_impact":
   4) why requested overrides may be larger than actually changed donors.
 - Add a balance-focused interpretation (e.g., more balanced vs more imbalanced).
 - If evidence includes impacted modalities/models/tasks, include a prioritized adjustment list.
-- If user asks in Chinese, answer in Chinese; if user asks in English, answer in English.
 `;
 const extractModelMentions = (q) => {
   return linkModelEntities(q).map((x) => x.id);
@@ -2592,8 +3073,17 @@ const parseImpactRequest = (q = "") => {
   const asksImpact = qHasAny(s, ["影响", "impact", "impacted", "downstream", "下游", "变更", "修改", "更新"]);
   if (!asksImpact) return null;
   const donorCode = normalizeDonorCode(q);
+  const raw = String(q || "").trim();
+  const extractEntitySpan = () => {
+    const scoped =
+      raw.match(/\b(?:in|of|for|on|after)\s+([A-Za-z0-9_+\-\/().\s]{3,}?\b(?:dataset|data|model|pipeline)\b(?:\s*v?\d+(?:\.\d+)*)?)/i)?.[1] ||
+      raw.match(/([A-Za-z0-9_+\-\/().\s]{3,}?\b(?:dataset|model|pipeline)\b(?:\s*v?\d+(?:\.\d+)*)?)/i)?.[1] ||
+      "";
+    return String(scoped || "").trim();
+  };
+  const entitySpan = extractEntitySpan();
   return {
-    entityQuery: donorCode || String(q || "").trim(),
+    entityQuery: donorCode || entitySpan || raw,
     depth: qHasAny(s, ["all", "全部", "all downstream"]) ? 8 : 6,
   };
 };
@@ -2640,7 +3130,8 @@ const getForcedToolUses = (userMsg) => {
 const hasCjk = (s = "") => /[\u3400-\u9FFF]/.test(String(s || ""));
 const formatIntentAnswer = (intent, params, result, context = {}) => {
   const question = String(context?.question || "");
-  const preferEnglish = !hasCjk(question);
+  void question;
+  const preferEnglish = true;
   const rows = result?.rows || [];
   if (
     !rows.length &&
@@ -2666,7 +3157,25 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
     case "datasets_for_model":
       return `Found ${rows.length} dataset(s) used by this model:\n${rows.map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
     case "pipeline_for_dataset":
-      return `Pipeline for this dataset:\n${rows.map((r) => `- ${r.label}`).join("\n")}`;
+      return rows
+        .map((r) => {
+          const detail = r?.detail && typeof r.detail === "object" ? r.detail : {};
+          const version = detail.Version || detail.version || "";
+          const contact = detail.Contact || detail.Owner || detail.contact || detail.owner || "";
+          const email = detail.Email || detail.email || "";
+          const datasetLabel = r?.datasetLabel || r?.inputDatasetId || r?.datasetId || "Unknown dataset";
+          const pipelineLabel = r?.label || r?.id || "Unknown pipeline";
+          return [
+            `Dataset: ${datasetLabel}`,
+            `Pipeline: ${pipelineLabel}`,
+            version
+              ? `Version: ${version}`
+              : "Version: version is not available in the current demo graph",
+            contact ? `Owner/Contact: ${contact}` : "",
+            email ? `Email: ${email}` : "",
+          ].filter(Boolean).join("\n");
+        })
+        .join("\n\n");
     case "downstream_tasks":
       return `Found ${rows.length} downstream task(s):\n${rows.map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
     case "compliance_status": {
@@ -2679,6 +3188,68 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       return rows
         .map((r) => {
           const detail = r?.detail && typeof r.detail === "object" ? r.detail : {};
+          const idLower = String(r?.id || "").toLowerCase();
+          const typeLower = String(r?.type || "").toLowerCase();
+          const labelUpper = String(r?.label || "").toUpperCase();
+          const looksDonor =
+            idLower.startsWith("donor_hpap_") ||
+            typeLower === "donor" ||
+            /\bHPAP[-_\s]?\d{1,3}\b/.test(labelUpper);
+          const pickValue = (keys = []) => {
+            for (const k of keys) {
+              const hit = Object.entries(detail).find(([kk]) => String(kk).toLowerCase() === String(k).toLowerCase());
+              if (hit && String(hit[1] ?? "").trim() !== "") return hit[1];
+            }
+            return "";
+          };
+          const modalityAvailable = (() => {
+            const known = [
+              "scRNA", "scATAC", "snMultiomics", "Histology", "CODEX", "IMC", "CITE-seq",
+              "Flow Cytometry", "CyTOF", "BCR", "TCR", "Oxygen", "WGS", "Bulk RNA", "Bulk ATAC",
+            ];
+            const yesLike = (v) => {
+              const s = String(v || "").toLowerCase();
+              return ["yes", "true", "available", "present", "1", "y"].some((x) => s === x || s.includes(x));
+            };
+            const out = [];
+            Object.entries(detail).forEach(([k, v]) => {
+              const key = String(k || "");
+              const keyLower = key.toLowerCase();
+              if (keyLower.includes("modality") || keyLower.includes("available")) {
+                if (yesLike(v)) out.push(key);
+                if (!yesLike(v) && String(v || "").trim()) {
+                  const text = String(v || "");
+                  known.forEach((m) => {
+                    if (text.toLowerCase().includes(m.toLowerCase())) out.push(m);
+                  });
+                }
+              } else {
+                known.forEach((m) => {
+                  if (keyLower.includes(m.toLowerCase()) && yesLike(v)) out.push(m);
+                });
+              }
+            });
+            return [...new Set(out)].slice(0, 12);
+          })();
+          if (looksDonor && preferEnglish) {
+            const clinicalDiagnosis = pickValue(["clinical_diagnosis", "clinical diagnosis", "Clinical_Diagnosis", "Clinical Diagnosis"]);
+            const diseaseStatus = pickValue(["DiseaseStatus", "disease_status", "disease status"]);
+            const t1dStage = pickValue(["T1D stage", "T1D stage__2", "t1d stage", "T1D Stage"]);
+            const sex = pickValue(["sex", "Sex", "Gender", "gender"]);
+            const age = pickValue(["age", "Age", "Age at enrollment", "Age_at_enrollment"]);
+            const ethnicity = pickValue(["Ethnicities", "Ethnicity", "ethnicity", "Race", "race", "Genetic Ancestry (PancDB)", "Genetic Ancestry"]);
+            const compact = [
+              `Donor metadata: ${r.label} [${r.type}]`,
+              clinicalDiagnosis ? `- clinical_diagnosis: ${clinicalDiagnosis}` : "",
+              diseaseStatus ? `- DiseaseStatus: ${diseaseStatus}` : "",
+              t1dStage ? `- T1D stage: ${t1dStage}` : "",
+              sex ? `- sex: ${sex}` : "",
+              age ? `- age: ${age}` : "",
+              ethnicity ? `- ethnicity/ancestry: ${ethnicity}` : "",
+              modalityAvailable.length ? `- available modalities: ${modalityAvailable.join(", ")}` : "",
+            ].filter(Boolean);
+            if (compact.length > 1) return compact.join("\n");
+          }
           const preferredKeys = [
             "Contact", "Owner", "email", "Email", "path", "Path", "Version", "version",
             "Institution", "institution", "Updated", "updated", "Status", "status",
@@ -2735,36 +3306,24 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const donorLabels = rows.map((r) => r.label || r.id).filter(Boolean);
       const preview = donorLabels.slice(0, 15).join(", ");
       return [
-        `在 ${s.modelALabel} 和 ${s.modelBLabel}${same} 的 ${s.splitA || "training"} / ${s.splitB || "training"} 数据中，共有 ${s.overlapCount} 位 donor 重叠。`,
-        `${s.modelALabel} 总 donor 数 ${s.modelADonorCount}，${s.modelBLabel} 总 donor 数 ${s.modelBDonorCount}。重叠占比为 ${pctA}%（相对模型A）和 ${pctB}%（相对模型B）。`,
-        donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有重叠 donor。",
+        `Between ${s.modelALabel} and ${s.modelBLabel}${same}, there are ${s.overlapCount} overlapping donors in ${s.splitA || "training"} / ${s.splitB || "training"} splits.`,
+        `${s.modelALabel} has ${s.modelADonorCount} donors and ${s.modelBLabel} has ${s.modelBDonorCount}; overlap ratio is ${pctA}% (relative to model A) and ${pctB}% (relative to model B).`,
+        donorLabels.length ? `Example donors: ${preview}${donorLabels.length > 15 ? " ..." : ""}` : "No overlapping donors were found.",
       ].join("\n");
     }
     case "embedding_leakage_between_models": {
       const s = result?.summary || {};
       const dirs = Array.isArray(s.directions) ? s.directions : [];
       if (!dirs.length) {
-        return preferEnglish
-          ? "No valid source/target model pair was found for embedding leakage analysis."
-          : "当前图中未找到可用于 embedding leakage 分析的模型对。";
-      }
-      if (preferEnglish) {
-        return [
-          `Potential cross-model embedding leakage donors: ${s.leakageDonorCount ?? rows.length}`,
-          `Target embedding usage split: ${s.targetUseSplit || "evaluation"}, source split: ${s.sourceSplit || "training"}, target-train split: ${s.targetTrainSplit || "training"}.`,
-          ...dirs.map((d) =>
-            `- ${d.sourceModelLabel} -> ${d.targetModelLabel}: embeddings=${d.sourceEmbeddingCount}, usedByTarget=${d.embeddingsUsedByTargetCount}, embeddingDonors=${d.embeddingDonors}, leakageDonors=${d.leakageDonors}`
-          ),
-          rows.length ? `Donors: ${rows.map((r) => r.label).join(", ")}` : "Donors: none",
-        ].join("\n");
+        return "No valid source/target model pair was found for embedding leakage analysis.";
       }
       return [
-        `潜在 cross-model embedding leakage donor 数：${s.leakageDonorCount ?? rows.length}`,
-        `目标模型使用 embedding 的 split：${s.targetUseSplit || "evaluation"}；source split：${s.sourceSplit || "training"}；target-train split：${s.targetTrainSplit || "training"}。`,
+        `Potential cross-model embedding leakage donors: ${s.leakageDonorCount ?? rows.length}`,
+        `Target embedding usage split: ${s.targetUseSplit || "evaluation"}, source split: ${s.sourceSplit || "training"}, target-train split: ${s.targetTrainSplit || "training"}.`,
         ...dirs.map((d) =>
-          `- ${d.sourceModelLabel} -> ${d.targetModelLabel}：embeddings=${d.sourceEmbeddingCount}，target 使用=${d.embeddingsUsedByTargetCount}，embedding donor=${d.embeddingDonors}，leakage donor=${d.leakageDonors}`
+          `- ${d.sourceModelLabel} -> ${d.targetModelLabel}: embeddings=${d.sourceEmbeddingCount}, usedByTarget=${d.embeddingsUsedByTargetCount}, embeddingDonors=${d.embeddingDonors}, leakageDonors=${d.leakageDonors}`
         ),
-        rows.length ? `Donor 列表：${rows.map((r) => r.label).join(", ")}` : "Donor 列表：none",
+        rows.length ? `Donors: ${rows.map((r) => r.label).join(", ")}` : "Donors: none",
       ].join("\n");
     }
     case "donor_overlap_between_models": {
@@ -2778,9 +3337,9 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const donorLabels = rows.map((r) => r.label || r.id).filter(Boolean);
       const preview = donorLabels.slice(0, 15).join(", ");
       return [
-        `在 ${s.modelALabel} 和 ${s.modelBLabel}${same} 的 ${s.splitA || "training"} / ${s.splitB || "training"} 数据中，共有 ${s.overlapCount} 位 donor 重叠。`,
-        `${s.modelALabel} 总 donor 数 ${s.modelADonorCount}，${s.modelBLabel} 总 donor 数 ${s.modelBDonorCount}。重叠占比为 ${pctA}%（相对模型A）和 ${pctB}%（相对模型B）。`,
-        donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有重叠 donor。",
+        `Between ${s.modelALabel} and ${s.modelBLabel}${same}, there are ${s.overlapCount} overlapping donors in ${s.splitA || "training"} / ${s.splitB || "training"} splits.`,
+        `${s.modelALabel} has ${s.modelADonorCount} donors and ${s.modelBLabel} has ${s.modelBDonorCount}; overlap ratio is ${pctA}% (relative to model A) and ${pctB}% (relative to model B).`,
+        donorLabels.length ? `Example donors: ${preview}${donorLabels.length > 15 ? " ..." : ""}` : "No overlapping donors were found.",
       ].join("\n");
     }
     case "donor_attribute_ratio": {
@@ -2793,21 +3352,21 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const askType = String(s.askType || params?.askType || "ratio").toLowerCase();
       if (askType === "distribution") {
         return [
-          `在当前 donor 集合（${s.totalDonors ?? rows.length} 位）中，${s.mode === "ethnicity" ? "人群" : "diagnosis"}分布如下：`,
+          `In the current donor set (${s.totalDonors ?? rows.length}), the ${s.mode === "ethnicity" ? "ethnicity" : "diagnosis"} distribution is:`,
           compText,
         ].join("\n");
       }
       if (askType === "count") {
         return [
-          `在当前 donor 集合（${s.totalDonors ?? rows.length} 位）中，${s.targetValue || "目标属性"} 的数量是 ${s.matchedDonors ?? 0}。`,
-          `属性维度：${s.mode || "unknown"}，split：${s.split || "training"}。`,
-          `组成：${compText}`,
+          `In the current donor set (${s.totalDonors ?? rows.length}), the count for ${s.targetValue || "the target attribute"} is ${s.matchedDonors ?? 0}.`,
+          `Attribute mode: ${s.mode || "unknown"}, split: ${s.split || "training"}.`,
+          `Composition: ${compText}`,
         ].join("\n");
       }
       return [
-        `在当前 donor 集合（${s.totalDonors ?? rows.length} 位）中，${s.targetValue || "目标属性"} 的比例为 ${pct}% (${s.matchedDonors ?? 0}/${s.totalDonors ?? rows.length})。`,
-        `属性维度：${s.mode || "unknown"}，split：${s.split || "training"}。`,
-        `组成：${compText}`,
+        `In the current donor set (${s.totalDonors ?? rows.length}), the proportion of ${s.targetValue || "the target attribute"} is ${pct}% (${s.matchedDonors ?? 0}/${s.totalDonors ?? rows.length}).`,
+        `Attribute mode: ${s.mode || "unknown"}, split: ${s.split || "training"}.`,
+        `Composition: ${compText}`,
       ].join("\n");
     }
     case "disease_composition_for_model_training": {
@@ -2921,9 +3480,7 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
     case "reclassification_distribution_impact": {
       const s = result?.summary || {};
       if (!s.found) {
-        return preferEnglish
-          ? `No donors were found for scope ${s.scopeType || "unknown"} (${s.scopeRef || "n/a"}) with split=${s.split || "training"}.`
-          : `在作用域 ${s.scopeType || "unknown"}（${s.scopeRef || "n/a"}）和 split=${s.split || "training"} 下未找到 donor。`;
+        return `No donors were found for scope ${s.scopeType || "unknown"} (${s.scopeRef || "n/a"}) with split=${s.split || "training"}.`;
       }
       const beforeCounts = s.before?.counts || {};
       const afterCounts = s.after?.counts || {};
@@ -2933,35 +3490,19 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const modalities = (s.impactedModalities || []).slice(0, 20).join(", ") || "none";
       const models = (s.impactedModels || []).map((x) => x.label || x).slice(0, 20).join(", ") || "none";
       const tasks = (s.impactedTasks || []).map((x) => x.label || x).slice(0, 20).join(", ") || "none";
-      if (preferEnglish) {
-        return [
-          `Donor reclassification impact analysis (${s.scopeType}: ${s.scopeRef}, split=${s.split}):`,
-          `Scope donors: ${s.donorCount}; requested overrides: ${s.requestedReclassificationCount || 0}; matched in scope: ${s.inScopeOverrideCount || 0}; diagnosis changed: ${s.changedCount || 0}.`,
-          outsideScopeOverrides > 0
-            ? `Note: ${outsideScopeOverrides} requested donor(s) were outside this scope or split, so they did not affect this calculation.`
-            : `All requested donor overrides were within scope.`,
-          `Balance trend: ${s.balance?.trend || "unknown"} (risk=${s.balance?.riskLevel || "unknown"}).`,
-          `Before ratio (T1D:ND) = ${s.before?.t1dToNd || "0:0"} (T1D ${(100 * (s.before?.t1dRatio || 0)).toFixed(1)}%, ND ${(100 * (s.before?.ndRatio || 0)).toFixed(1)}%).`,
-          `Before composition: ${beforeComp}.`,
-          `After ratio  (T1D:ND) = ${s.after?.t1dToNd || "0:0"} (T1D ${(100 * (s.after?.t1dRatio || 0)).toFixed(1)}%, ND ${(100 * (s.after?.ndRatio || 0)).toFixed(1)}%).`,
-          `After composition: ${afterComp}.`,
-          `Shift summary: T1D delta ${s.shift?.t1dDelta || 0} (${(100 * (s.shift?.t1dRatioDelta || 0)).toFixed(1)} pp), ND delta ${s.shift?.ndDelta || 0} (${(100 * (s.shift?.ndRatioDelta || 0)).toFixed(1)} pp).`,
-          `Potential adjustment targets -> modalities: ${modalities}; models: ${models}; downstream tasks: ${tasks}.`,
-        ].join("\n");
-      }
       return [
-        `donor 重分类后的分布影响分析（${s.scopeType}: ${s.scopeRef}, split=${s.split}）：`,
-        `作用域 donor 数：${s.donorCount}；请求重分类：${s.requestedReclassificationCount || 0}；作用域内命中：${s.inScopeOverrideCount || 0}；实际诊断改变：${s.changedCount || 0}。`,
+        `Donor reclassification impact analysis (${s.scopeType}: ${s.scopeRef}, split=${s.split}):`,
+        `Scope donors: ${s.donorCount}; requested overrides: ${s.requestedReclassificationCount || 0}; matched in scope: ${s.inScopeOverrideCount || 0}; diagnosis changed: ${s.changedCount || 0}.`,
         outsideScopeOverrides > 0
-          ? `说明：有 ${outsideScopeOverrides} 个请求 donor 不在当前作用域/分割中，因此未计入本次变化。`
-          : `说明：所有请求 donor 都在当前作用域内。`,
-        `平衡性趋势：${s.balance?.trend || "unknown"}（风险等级=${s.balance?.riskLevel || "unknown"}）。`,
-        `重分类前 T1D:ND = ${s.before?.t1dToNd || "0:0"}（T1D ${(100 * (s.before?.t1dRatio || 0)).toFixed(1)}%，ND ${(100 * (s.before?.ndRatio || 0)).toFixed(1)}%）。`,
-        `重分类前构成：${beforeComp}。`,
-        `重分类后 T1D:ND = ${s.after?.t1dToNd || "0:0"}（T1D ${(100 * (s.after?.t1dRatio || 0)).toFixed(1)}%，ND ${(100 * (s.after?.ndRatio || 0)).toFixed(1)}%）。`,
-        `重分类后构成：${afterComp}。`,
-        `变化总结：T1D delta ${s.shift?.t1dDelta || 0}（${(100 * (s.shift?.t1dRatioDelta || 0)).toFixed(1)} pp），ND delta ${s.shift?.ndDelta || 0}（${(100 * (s.shift?.ndRatioDelta || 0)).toFixed(1)} pp）。`,
-        `建议优先复核 -> 受影响数据模态：${modalities}；受影响模型：${models}；下游任务：${tasks}。`,
+          ? `Note: ${outsideScopeOverrides} requested donor(s) were outside this scope or split, so they did not affect this calculation.`
+          : `All requested donor overrides were within scope.`,
+        `Balance trend: ${s.balance?.trend || "unknown"} (risk=${s.balance?.riskLevel || "unknown"}).`,
+        `Before ratio (T1D:ND) = ${s.before?.t1dToNd || "0:0"} (T1D ${(100 * (s.before?.t1dRatio || 0)).toFixed(1)}%, ND ${(100 * (s.before?.ndRatio || 0)).toFixed(1)}%).`,
+        `Before composition: ${beforeComp}.`,
+        `After ratio  (T1D:ND) = ${s.after?.t1dToNd || "0:0"} (T1D ${(100 * (s.after?.t1dRatio || 0)).toFixed(1)}%, ND ${(100 * (s.after?.ndRatio || 0)).toFixed(1)}%).`,
+        `After composition: ${afterComp}.`,
+        `Shift summary: T1D delta ${s.shift?.t1dDelta || 0} (${(100 * (s.shift?.t1dRatioDelta || 0)).toFixed(1)} pp), ND delta ${s.shift?.ndDelta || 0} (${(100 * (s.shift?.ndRatioDelta || 0)).toFixed(1)} pp).`,
+        `Potential adjustment targets -> modalities: ${modalities}; models: ${models}; downstream tasks: ${tasks}.`,
       ].join("\n");
     }
     case "shared_validation_datasets_across_fms": {
@@ -3001,21 +3542,12 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const datasetCount = s.datasetCount ?? s.impactedDatasetCount ?? 0;
       const modelCount = s.modelCount ?? s.impactedModelCount ?? 0;
       const taskCount = s.taskCount ?? s.impactedTaskCount ?? 0;
-      if (preferEnglish) {
-        return [
-          `Downstream impact overview for changes to ${s.startLabel}:`,
-          `Impacted samples: ${sampleCount}, datasets: ${datasetCount}, models: ${modelCount}, downstream tasks: ${taskCount}.`,
-          `Impacted data modalities: ${modalityPreview || "none"}`,
-          `Impacted models: ${modelPreview || "none"}`,
-          `Impacted tasks: ${taskPreview || "none"}`,
-        ].join("\n");
-      }
       return [
-        `${s.startLabel} 变更的下游影响概览：`,
-        `受影响样本 ${sampleCount}，数据集 ${datasetCount}，模型 ${modelCount}，下游任务 ${taskCount}。`,
-        `受影响数据模态：${modalityPreview || "none"}`,
-        `受影响模型：${modelPreview || "none"}`,
-        `受影响任务：${taskPreview || "none"}`,
+        `Downstream impact overview for changes to ${s.startLabel}:`,
+        `Impacted samples: ${sampleCount}, datasets: ${datasetCount}, models: ${modelCount}, downstream tasks: ${taskCount}.`,
+        `Impacted data modalities: ${modalityPreview || "none"}`,
+        `Impacted models: ${modelPreview || "none"}`,
+        `Impacted tasks: ${taskPreview || "none"}`,
       ].join("\n");
     }
     case "get_neighbors":
@@ -3025,16 +3557,16 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const donorLabels = rows.map((r) => r.label || r.id).filter(Boolean);
       const preview = donorLabels.slice(0, 15).join(", ");
       const sourceSummary = Array.isArray(s.sources)
-        ? s.sources.map((x) => `${x.sourceLabel}(${x.donorCount})`).join("；")
+        ? s.sources.map((x) => `${x.sourceLabel}(${x.donorCount})`).join("; ")
         : "";
       if ((s.combine || "").toLowerCase() === "intersection" && (s.sourceCount || 0) > 1) {
         return [
-          `这 ${s.sourceCount} 个来源在 ${s.split || "training"} 数据中的共同 donor 有 ${s.donorCount ?? rows.length} 位。`,
-          sourceSummary ? `来源 donor 规模：${sourceSummary}` : "",
-          donorLabels.length ? `示例 donor：${preview}${donorLabels.length > 15 ? " ..." : ""}` : "当前没有共同 donor。",
+          `There are ${s.donorCount ?? rows.length} shared donors across ${s.sourceCount} sources in split=${s.split || "training"}.`,
+          sourceSummary ? `Source donor counts: ${sourceSummary}` : "",
+          donorLabels.length ? `Example donors: ${preview}${donorLabels.length > 15 ? " ..." : ""}` : "No shared donors were found.",
         ].filter(Boolean).join("\n");
       }
-      const hdr = `提取到 ${s.donorCount ?? rows.length} 位 donor（split=${s.split || "training"}，combine=${s.combine || "union"}，sources=${s.sourceCount || 0}）。`;
+      const hdr = `Extracted ${s.donorCount ?? rows.length} donors (split=${s.split || "training"}, combine=${s.combine || "union"}, sources=${s.sourceCount || 0}).`;
       return `${hdr}\n${rows.slice(0, 200).map((r, i) => `${i + 1}. ${r.label}`).join("\n")}`;
     }
     case "set_operation": {
@@ -3049,6 +3581,8 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
 
 export {
   queryGraph,
+  buildGraphOntologyContext,
+  GRAPH_ONTOLOGY_CONTEXT,
   GRAPH_CONTEXT,
   INTENT_ENUM,
   AGENT_TOOLS,
