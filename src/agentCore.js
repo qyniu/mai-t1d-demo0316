@@ -3089,7 +3089,7 @@ const parseImpactRequest = (q = "") => {
 };
 const parseDonorAttributeTargetFromQuestion = (q = "") => {
   const s = normalizeQ(q);
-  const asksRatio = qHasAny(s, ["ratio", "比例", "占比", "percent", "percentage"]);
+  const asksRatio = qHasAny(s, ["ratio", "proportion", "fraction", "比例", "占比", "percent", "percentage"]);
   const asksCount = qHasAny(s, ["how many", "count", "多少", "几位", "几人", "数量", "number of"]);
   const asksDistribution = qHasAny(s, ["distribution", "distributions", "composition", "breakdown", "分布", "构成", "组成"]);
   const asksDonor = qHasAny(s, ["donor", "donors", "供体"]);
@@ -3128,6 +3128,25 @@ const getForcedToolUses = (userMsg) => {
 };
 
 const hasCjk = (s = "") => /[\u3400-\u9FFF]/.test(String(s || ""));
+const parseImpactAnswerFocus = (question = "") => {
+  const q = String(question || "").toLowerCase();
+  const has = (re) => re.test(q);
+  const asks = {
+    models: has(/\bmodels?\b/),
+    datasets: has(/\bdatasets?|data\b/),
+    tasks: has(/\btasks?\b/),
+    modalities: has(/\bmodalit(?:y|ies)\b/),
+    samples: has(/\bsamples?\b/),
+  };
+  const requested = Object.entries(asks)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  return {
+    requested,
+    single: requested.length === 1 ? requested[0] : "",
+    isFocused: requested.length >= 1,
+  };
+};
 const formatIntentAnswer = (intent, params, result, context = {}) => {
   const question = String(context?.question || "");
   void question;
@@ -3300,6 +3319,31 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
     }
     case "training_donor_overlap_between_models": {
       const s = result?.summary || {};
+      const q = String(question || "").toLowerCase();
+      const asksDonorDiseaseStats =
+        /\b(proportion|ratio|percent|percentage|distribution|composition|breakdown)\b/.test(q) &&
+        /\b(donor|donors|patient|patients)\b/.test(q);
+      if (asksDonorDiseaseStats) {
+        const comp = s.diseaseComposition || {};
+        const total = Number(s.overlapCount || rows.length || 0);
+        const t1d = Number(comp.T1D || 0);
+        const t2d = Number(comp.T2D || 0);
+        const nd = Number(comp.ND || 0);
+        const aab = Number(comp["AAb+"] || 0);
+        const unknown = Number(comp.Unknown || 0);
+        const pct = (n) => (total ? ((100 * n) / total).toFixed(1) : "0.0");
+        const asksT1D = /\bt1d|t1dm\b/.test(q);
+        if (asksT1D) {
+          return [
+            `Among donors used to train both ${s.modelALabel} and ${s.modelBLabel}, the proportion of T1D patients is ${pct(t1d)}% (${t1d}/${total}).`,
+            `Distribution in shared training donors: T1D=${t1d}, T2D=${t2d}, ND=${nd}, AAb+=${aab}, Unknown=${unknown}.`,
+          ].join("\n");
+        }
+        return [
+          `Shared training donors between ${s.modelALabel} and ${s.modelBLabel}: ${total}.`,
+          `Disease distribution: T1D=${t1d} (${pct(t1d)}%), T2D=${t2d} (${pct(t2d)}%), ND=${nd} (${pct(nd)}%), AAb+=${aab} (${pct(aab)}%), Unknown=${unknown} (${pct(unknown)}%).`,
+        ].join("\n");
+      }
       const pctA = ((s.overlapRatioA || 0) * 100).toFixed(1);
       const pctB = ((s.overlapRatioB || 0) * 100).toFixed(1);
       const same = s.sameModel ? " (same model compared to itself)" : "";
@@ -3330,6 +3374,31 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const s = result?.summary || {};
       if (!s.found && !rows.length) {
         return `No matching model pair was found for overlap query in current graph.`;
+      }
+      const q = String(question || "").toLowerCase();
+      const asksDonorDiseaseStats =
+        /\b(proportion|ratio|percent|percentage|distribution|composition|breakdown)\b/.test(q) &&
+        /\b(donor|donors|patient|patients)\b/.test(q);
+      if (asksDonorDiseaseStats) {
+        const comp = s.diseaseComposition || {};
+        const total = Number(s.overlapCount || rows.length || 0);
+        const t1d = Number(comp.T1D || 0);
+        const t2d = Number(comp.T2D || 0);
+        const nd = Number(comp.ND || 0);
+        const aab = Number(comp["AAb+"] || 0);
+        const unknown = Number(comp.Unknown || 0);
+        const pct = (n) => (total ? ((100 * n) / total).toFixed(1) : "0.0");
+        const asksT1D = /\bt1d|t1dm\b/.test(q);
+        if (asksT1D) {
+          return [
+            `Among overlapping donors between ${s.modelALabel} (${s.splitA || "training"}) and ${s.modelBLabel} (${s.splitB || "training"}), the proportion of T1D patients is ${pct(t1d)}% (${t1d}/${total}).`,
+            `Distribution in overlapping donors: T1D=${t1d}, T2D=${t2d}, ND=${nd}, AAb+=${aab}, Unknown=${unknown}.`,
+          ].join("\n");
+        }
+        return [
+          `Overlapping donors between ${s.modelALabel} and ${s.modelBLabel}: ${total}.`,
+          `Disease distribution: T1D=${t1d} (${pct(t1d)}%), T2D=${t2d} (${pct(t2d)}%), ND=${nd} (${pct(nd)}%), AAb+=${aab} (${pct(aab)}%), Unknown=${unknown} (${pct(unknown)}%).`,
+        ].join("\n");
       }
       const pctA = ((s.overlapRatioA || 0) * 100).toFixed(1);
       const pctB = ((s.overlapRatioB || 0) * 100).toFixed(1);
@@ -3542,6 +3611,47 @@ const formatIntentAnswer = (intent, params, result, context = {}) => {
       const datasetCount = s.datasetCount ?? s.impactedDatasetCount ?? 0;
       const modelCount = s.modelCount ?? s.impactedModelCount ?? 0;
       const taskCount = s.taskCount ?? s.impactedTaskCount ?? 0;
+      const focus = parseImpactAnswerFocus(question);
+      if (focus.single === "models") {
+        const models = Array.isArray(s.impactedModels) ? s.impactedModels : [];
+        const lines = models.length ? models.map((m, i) => `${i + 1}. ${m}`) : ["none"];
+        return [
+          `Downstream models impacted by changes to ${s.startLabel}: ${modelCount}.`,
+          ...lines,
+        ].join("\n");
+      }
+      if (focus.single === "datasets") {
+        const datasets = Array.isArray(s.impactedDatasets) ? s.impactedDatasets : [];
+        const lines = datasets.length
+          ? datasets.map((d, i) => `${i + 1}. ${d.label}${d.modality ? ` [${d.modality}]` : ""}`)
+          : ["none"];
+        return [
+          `Downstream datasets impacted by changes to ${s.startLabel}: ${datasetCount}.`,
+          ...lines,
+        ].join("\n");
+      }
+      if (focus.single === "tasks") {
+        const tasks = Array.isArray(s.impactedTasks) ? s.impactedTasks : [];
+        const lines = tasks.length ? tasks.map((t, i) => `${i + 1}. ${t}`) : ["none"];
+        return [
+          `Downstream tasks impacted by changes to ${s.startLabel}: ${taskCount}.`,
+          ...lines,
+        ].join("\n");
+      }
+      if (focus.single === "modalities") {
+        const modalities = Array.isArray(s.impactedModalities) ? s.impactedModalities : [];
+        const lines = modalities.length ? modalities.map((m, i) => `${i + 1}. ${m}`) : ["none"];
+        return [
+          `Impacted data modalities for changes to ${s.startLabel}: ${modalities.length}.`,
+          ...lines,
+        ].join("\n");
+      }
+      if (focus.single === "samples") {
+        return [
+          `Downstream samples impacted by changes to ${s.startLabel}: ${sampleCount}.`,
+          sampleCount > 0 ? "Sample-level listing is not materialized in the current demo summary." : "none",
+        ].join("\n");
+      }
       return [
         `Downstream impact overview for changes to ${s.startLabel}:`,
         `Impacted samples: ${sampleCount}, datasets: ${datasetCount}, models: ${modelCount}, downstream tasks: ${taskCount}.`,
@@ -3599,6 +3709,7 @@ export {
   detectSplitFromQuestion,
   hasOverlapSignal,
   hasMultiModelSignal,
+  parseImpactAnswerFocus,
   parseInventoryRequest,
   parseImpactRequest,
   parseDonorAttributeTargetFromQuestion,

@@ -19,6 +19,7 @@ import {
   detectSplitFromQuestion,
   hasOverlapSignal,
   hasMultiModelSignal,
+  parseImpactAnswerFocus,
   parseInventoryRequest,
   parseImpactRequest,
   parseDonorAttributeTargetFromQuestion,
@@ -182,6 +183,17 @@ function AgentView({ p = false }) {
   };
   const isProvenanceQuestion = (q = "") => /\b(provenance|lineage|trace|chain|upstream)\b/i.test(String(q || ""));
   const isImpactQuestion = (q = "") => /\b(impact|impacted|affected|downstream impact)\b/i.test(String(q || "")) || /影响|受影响|下游/.test(String(q || ""));
+  const isModelFocusedImpactQuestion = (q = "") => {
+    const s = String(q || "").toLowerCase();
+    const asksModels = /\b(which|what|show|list)\b[^.?!]*\bmodels?\b/.test(s) || /\bmodels?\b[^.?!]*\bdownstream\b/.test(s);
+    const asksImpact = /\bdownstream|impacted|affected|impact\b/.test(s);
+    const asksOtherAssets = /\bdatasets?|tasks?|modalit(?:y|ies)|samples?\b/.test(s);
+    return asksModels && asksImpact && !asksOtherAssets;
+  };
+  const hasDonorSetIntersectionSignal = (q = "") => {
+    const s = normalizeQ(q);
+    return hasOverlapSignal(s) || /\bboth\b/.test(s) || /\bamong\b/.test(s);
+  };
   const pickBestGenericCandidate = (rows = [], question = "") => {
     const q = String(question || "").toLowerCase();
     const list = Array.isArray(rows) ? rows.slice() : [];
@@ -782,6 +794,56 @@ function AgentView({ p = false }) {
             }
           }
         }
+        {
+          const qNorm = normalizeQ(state.question);
+          const ratioTarget = parseDonorAttributeTargetFromQuestion(qNorm);
+          const linkedModelIds = Array.isArray(state.linkedEntities?.modelIds) ? state.linkedEntities.modelIds : [];
+          const modelsInQuestion = [...new Set(linkedModelIds.length ? linkedModelIds : extractModelMentions(qNorm))];
+          if (ratioTarget?.needsAttributeStats && hasDonorSetIntersectionSignal(qNorm) && modelsInQuestion.length >= 2) {
+            const split = detectSplitFromQuestion(state.question);
+            const donorAttrDone = (state.traceQueries || []).some(
+              (q) => q.intent === "donor_attribute_ratio" && Number.isFinite(q.result?.summary?.totalDonors)
+            );
+            if (!donorAttrDone) {
+              const overlapEvidence = [...(state.traceQueries || [])]
+                .reverse()
+                .find((q) => (
+                  q.intent === "donor_overlap_between_models" ||
+                  q.intent === "training_donor_overlap_between_models"
+                ));
+              if (overlapEvidence) {
+                const donorIds = (overlapEvidence.result?.rows || []).map((r) => r.id).filter(Boolean);
+                return {
+                  nextToolUse: normalizeToolUse(
+                    "donor_attribute_ratio",
+                    {
+                      donorIds,
+                      split,
+                      attribute: ratioTarget.mode === "ethnicity" ? "Ethnicities" : "clinical_diagnosis",
+                      targetValue: ratioTarget.targetValue || "",
+                      askType: ratioTarget.askType || "ratio",
+                    },
+                    state.step + 1,
+                    state.linkedEntities
+                  ),
+                };
+              }
+              return {
+                nextToolUse: normalizeToolUse(
+                  "training_donor_overlap_between_models",
+                  {
+                    modelAId: modelsInQuestion[0],
+                    modelBId: modelsInQuestion[1],
+                    splitA: split,
+                    splitB: split,
+                  },
+                  state.step + 1,
+                  state.linkedEntities
+                ),
+              };
+            }
+          }
+        }
         if (isEmbeddingLeakageQuestion(state.question) && mentionedModels.length >= 2) {
           const already = (state.traceQueries || []).some(
             (x) => x.intent === "embedding_leakage_between_models" && (x.result?.summary?.directionCount || 0) > 0
@@ -1251,6 +1313,54 @@ function AgentView({ p = false }) {
               : "Provenance chain needs at least 2 linked nodes or path summary.";
             break;
           case "impact_downstream":
+            {
+              const focus = parseImpactAnswerFocus(state?.question || "");
+              if (focus.single === "models") {
+                sufficient = hasAnyCount("modelCount", "impactedModelCount") && (summary.modelCount ?? summary.impactedModelCount ?? 0) > 0;
+                reason = sufficient
+                  ? "Model-focused downstream impact evidence is sufficient."
+                  : "Model-focused question requires impacted model evidence.";
+                break;
+              }
+              if (focus.single === "datasets") {
+                sufficient =
+                  hasAnyCount("datasetCount", "impactedDatasetCount") &&
+                  (summary.datasetCount ?? summary.impactedDatasetCount ?? 0) > 0;
+                reason = sufficient
+                  ? "Dataset-focused downstream impact evidence is sufficient."
+                  : "Dataset-focused question requires impacted dataset evidence.";
+                break;
+              }
+              if (focus.single === "tasks") {
+                sufficient = hasAnyCount("taskCount", "impactedTaskCount") && (summary.taskCount ?? summary.impactedTaskCount ?? 0) > 0;
+                reason = sufficient
+                  ? "Task-focused downstream impact evidence is sufficient."
+                  : "Task-focused question requires impacted task evidence.";
+                break;
+              }
+              if (focus.single === "modalities") {
+                const modalities = Array.isArray(summary.impactedModalities) ? summary.impactedModalities : [];
+                sufficient = modalities.length > 0;
+                reason = sufficient
+                  ? "Modality-focused downstream impact evidence is sufficient."
+                  : "Modality-focused question requires impacted modality evidence.";
+                break;
+              }
+              if (focus.single === "samples") {
+                sufficient = hasAnyCount("sampleCount", "impactedSampleCount");
+                reason = sufficient
+                  ? "Sample-focused downstream impact evidence is sufficient."
+                  : "Sample-focused question requires impacted sample evidence.";
+                break;
+              }
+            }
+            if (isModelFocusedImpactQuestion(state?.question || "")) {
+              sufficient = hasAnyCount("modelCount", "impactedModelCount") && (summary.modelCount ?? summary.impactedModelCount ?? 0) > 0;
+              reason = sufficient
+                ? "Model-focused downstream impact evidence is sufficient."
+                : "Model-focused question requires impacted model evidence.";
+              break;
+            }
             sufficient =
               rowCount > 0 ||
               hasAnyCount(
@@ -1264,6 +1374,11 @@ function AgentView({ p = false }) {
             break;
           case "training_donor_overlap_between_models":
           case "donor_overlap_between_models":
+            if (parseDonorAttributeTargetFromQuestion(normalizeQ(state?.question || "")).needsAttributeStats) {
+              sufficient = false;
+              reason = "Overlap donor set found, but donor_attribute_ratio is still required to answer the requested ratio/distribution.";
+              break;
+            }
             sufficient = hasNumeric(summary.overlapCount) || donorLikeRow;
             reason = sufficient
               ? "Overlap evidence is sufficient."
