@@ -184,6 +184,23 @@ function AgentView({ p = false }) {
   };
   const isProvenanceQuestion = (q = "") => /\b(provenance|lineage|trace|chain|upstream)\b/i.test(String(q || ""));
   const isImpactQuestion = (q = "") => /\b(impact|impacted|affected|downstream impact)\b/i.test(String(q || "")) || /影响|受影响|下游/.test(String(q || ""));
+  const isComplianceStatusQuestion = (q = "") => {
+    const s = String(q || "").toLowerCase();
+    return (
+      /\bcompliance\b/.test(s) ||
+      /\bcompliance status\b/.test(s) ||
+      /\bcompliance hold\b/.test(s) ||
+      (/\bstatus\b/.test(s) && /\bmodel|models|fm|foundation model|config|configuration\b/.test(s))
+    );
+  };
+  const hasComplianceEvidence = (traceQueries = []) => {
+    const list = Array.isArray(traceQueries) ? traceQueries : [];
+    return list.some((q) => {
+      if (q.intent === "compliance_status" && (q.result?.rows?.length || 0) > 0) return true;
+      const rows = Array.isArray(q.result?.rows) ? q.result.rows : [];
+      return rows.some((r) => (r?.compliance_hold !== undefined || r?.status !== undefined));
+    });
+  };
   const isModelFocusedImpactQuestion = (q = "") => {
     const s = String(q || "").toLowerCase();
     const asksModels = /\b(which|what|show|list)\b[^.?!]*\bmodels?\b/.test(s) || /\bmodels?\b[^.?!]*\bdownstream\b/.test(s);
@@ -535,6 +552,16 @@ function AgentView({ p = false }) {
         if (state.forceOnly && (!state.forcedQueue || state.forcedQueue.length === 0) && state.traceQueries.length > 0) {
           addTrace({ kind:"info", icon:ICON.done, label:"LangGraph fast-exit", detail:"Forced route satisfied; skipping extra planner rounds." });
           return { done: true };
+        }
+        if (isComplianceStatusQuestion(state.question) && !hasComplianceEvidence(state.traceQueries)) {
+          return {
+            nextToolUse: normalizeToolUse(
+              "compliance_status",
+              {},
+              state.step + 1,
+              state.linkedEntities
+            ),
+          };
         }
 
         if (state.forcedQueue?.length) {
@@ -1284,6 +1311,13 @@ function AgentView({ p = false }) {
 
         let sufficient = false;
         let reason = "";
+        const complianceQuestion = isComplianceStatusQuestion(state?.question || "");
+        if (complianceQuestion && !hasComplianceEvidence(traceQueries)) {
+          return {
+            ok: false,
+            reason: "Question asks compliance status, but compliance evidence is missing; run compliance_status first.",
+          };
+        }
 
         switch (intent) {
           case "datasets_for_model":
@@ -1441,6 +1475,17 @@ function AgentView({ p = false }) {
       const answerNode = async (state) => {
         setPhase("answering");
         if (state.finalAnswer) return { finalAnswer: state.finalAnswer };
+        if (isComplianceStatusQuestion(state.question) && !hasComplianceEvidence(state.traceQueries)) {
+          const result = queryGraph("compliance_status", {});
+          addTrace({ kind:"intent", icon:ICON.intent, label:"Intent: compliance_status", detail:"params: {}" });
+          addTrace({ kind:"step", icon:ICON.act, label:"LangGraph - repair", detail:"Auto-running compliance_status for answer adequacy." });
+          addTrace({ kind:"result", icon:(result?.rows?.length||0)>0?"OK":"INFO", label:"compliance_status", detail:`${result?.rows?.length || 0} row${(result?.rows?.length || 0)!==1?"s":""} returned` });
+          const answer = formatIntentAnswer("compliance_status", {}, result, { question: state.question }) || "No compliance status evidence found in current graph.";
+          return {
+            traceQueries: [{ intent: "compliance_status", params: {}, result }],
+            finalAnswer: answer,
+          };
+        }
         const deterministicIntents = new Set([
           "impact_downstream",
           "embedding_leakage_between_models",
