@@ -50,6 +50,7 @@ const ICON = {
   error: "\u274C",
 };
 const ENABLE_RULE_BASED_ROUTING = false;
+const ENABLE_HEURISTIC_INTENT_BRIDGES = false;
 
 function AgentView({ p = false }) {
   const [messages,   setMessages]   = useState([]);
@@ -541,108 +542,82 @@ function AgentView({ p = false }) {
           return { nextToolUse: next, forcedQueue: rest };
         }
 
-        // Always-on follow-up for node metadata/detail questions:
-        // search_nodes -> node_detail (prefer donor-level candidate for HPAP code queries).
-        // Keep this as a fallback for attribute lookups, but do not hijack
-        // relation/governance questions that should route to dedicated intents.
-        if (
-          isNodeAttributeQuestion(state.question) &&
-          !isPipelineFromDatasetQuestion(state.question) &&
-          !isModelsForDatasetQuestion(state.question) &&
-          !isProvenanceQuestion(state.question) &&
-          !isImpactQuestion(state.question)
-        ) {
-          const alreadyDetailed = (state.traceQueries || []).some(
-            (x) => x.intent === "node_detail" && (x.result?.rows?.length || 0) > 0
-          );
-          if (!alreadyDetailed) {
-            const last = state.traceQueries[state.traceQueries.length - 1];
-            if (!last) {
-              return {
-                nextToolUse: normalizeToolUse(
-                  "search_nodes",
-                  { query: state.question, limit: 20 },
-                  state.step + 1,
-                  state.linkedEntities
-                ),
-              };
-            }
-            if (last.intent === "search_nodes") {
-              const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
-              const { preferred, donorCode } = pickPreferredNodeDetailCandidate(rows, state.question);
-              if (preferred?.id) {
+        if (ENABLE_HEURISTIC_INTENT_BRIDGES) {
+          // Optional heuristic bridges. Disabled by default to avoid brittle keyword intent routing.
+          if (
+            isNodeAttributeQuestion(state.question) &&
+            !isPipelineFromDatasetQuestion(state.question) &&
+            !isModelsForDatasetQuestion(state.question) &&
+            !isProvenanceQuestion(state.question) &&
+            !isImpactQuestion(state.question)
+          ) {
+            const alreadyDetailed = (state.traceQueries || []).some(
+              (x) => x.intent === "node_detail" && (x.result?.rows?.length || 0) > 0
+            );
+            if (!alreadyDetailed) {
+              const last = state.traceQueries[state.traceQueries.length - 1];
+              if (!last) {
                 return {
                   nextToolUse: normalizeToolUse(
-                    "node_detail",
-                    { nodeId: preferred.id },
+                    "search_nodes",
+                    { query: state.question, limit: 20 },
                     state.step + 1,
                     state.linkedEntities
                   ),
                 };
               }
-              if (donorCode) {
-                const sampleCandidates = rows
-                  .slice(0, 5)
-                  .map((r) => `${r.label} [${r.type}]`)
-                  .join("; ");
-                return {
-                  done: true,
-                  finalAnswer: sampleCandidates
-                    ? `No donor-level node was found for ${donorCode} in the current graph. Sample-level candidates: ${sampleCandidates}`
-                    : `No donor-level node was found for ${donorCode} in the current graph.`,
-                };
+              if (last.intent === "search_nodes") {
+                const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
+                const { preferred, donorCode } = pickPreferredNodeDetailCandidate(rows, state.question);
+                if (preferred?.id) {
+                  return {
+                    nextToolUse: normalizeToolUse(
+                      "node_detail",
+                      { nodeId: preferred.id },
+                      state.step + 1,
+                      state.linkedEntities
+                    ),
+                  };
+                }
+                if (donorCode) {
+                  const sampleCandidates = rows
+                    .slice(0, 5)
+                    .map((r) => `${r.label} [${r.type}]`)
+                    .join("; ");
+                  return {
+                    done: true,
+                    finalAnswer: sampleCandidates
+                      ? `No donor-level node was found for ${donorCode} in the current graph. Sample-level candidates: ${sampleCandidates}`
+                      : `No donor-level node was found for ${donorCode} in the current graph.`,
+                  };
+                }
               }
             }
           }
-        }
 
-        // Narrow bridge: if pipeline-from-dataset question ran search_nodes, route to pipeline_for_dataset.
-        if (isPipelineFromDatasetQuestion(state.question)) {
-          const alreadyHasPipeline = (state.traceQueries || []).some(
-            (x) => x.intent === "pipeline_for_dataset" && (x.result?.rows?.length || 0) > 0
-          );
-          if (!alreadyHasPipeline) {
-            const last = state.traceQueries[state.traceQueries.length - 1];
-            if (!last) {
-              return {
-                nextToolUse: normalizeToolUse(
-                  "search_nodes",
-                  { query: state.question, preferredTypes: ["ProcessedData"], limit: 20 },
-                  state.step + 1,
-                  state.linkedEntities
-                ),
-              };
-            }
-            if (last.intent === "search_nodes") {
-              const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
-              const bestProcessedData = pickBestProcessedDatasetCandidate(rows, state.question);
-              if (bestProcessedData?.id) {
+          if (isPipelineFromDatasetQuestion(state.question)) {
+            const alreadyHasPipeline = (state.traceQueries || []).some(
+              (x) => x.intent === "pipeline_for_dataset" && (x.result?.rows?.length || 0) > 0
+            );
+            if (!alreadyHasPipeline) {
+              const last = state.traceQueries[state.traceQueries.length - 1];
+              if (!last) {
                 return {
                   nextToolUse: normalizeToolUse(
-                    "pipeline_for_dataset",
-                    { datasetId: bestProcessedData.id },
+                    "search_nodes",
+                    { query: state.question, preferredTypes: ["ProcessedData"], limit: 20 },
                     state.step + 1,
                     state.linkedEntities
                   ),
                 };
               }
-            }
-          }
-        }
-
-        // Generic evidence-driven follow-up bridge after search_nodes:
-        // map resolved entity candidates to governance intents.
-        {
-          const last = state.traceQueries[state.traceQueries.length - 1];
-          if (last?.intent === "search_nodes") {
-            const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
-            if (rows.length && !isExplicitSearchRequest(state.question)) {
-              if (isModelsForDatasetQuestion(state.question)) {
+              if (last.intent === "search_nodes") {
+                const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
                 const bestProcessedData = pickBestProcessedDatasetCandidate(rows, state.question);
                 if (bestProcessedData?.id) {
                   return {
                     nextToolUse: normalizeToolUse(
-                      "models_for_dataset",
+                      "pipeline_for_dataset",
                       { datasetId: bestProcessedData.id },
                       state.step + 1,
                       state.linkedEntities
@@ -650,49 +625,71 @@ function AgentView({ p = false }) {
                   };
                 }
               }
-              if (isProvenanceQuestion(state.question)) {
-                const best = pickBestGenericCandidate(rows, state.question);
-                if (best?.id) {
-                  return {
-                    nextToolUse: normalizeToolUse(
-                      "provenance_chain",
-                      { nodeId: best.id },
-                      state.step + 1,
-                      state.linkedEntities
-                    ),
-                  };
+            }
+          }
+
+          {
+            const last = state.traceQueries[state.traceQueries.length - 1];
+            if (last?.intent === "search_nodes") {
+              const rows = Array.isArray(last.result?.rows) ? last.result.rows : [];
+              if (rows.length && !isExplicitSearchRequest(state.question)) {
+                if (isModelsForDatasetQuestion(state.question)) {
+                  const bestProcessedData = pickBestProcessedDatasetCandidate(rows, state.question);
+                  if (bestProcessedData?.id) {
+                    return {
+                      nextToolUse: normalizeToolUse(
+                        "models_for_dataset",
+                        { datasetId: bestProcessedData.id },
+                        state.step + 1,
+                        state.linkedEntities
+                      ),
+                    };
+                  }
                 }
-              }
-              if (isImpactQuestion(state.question)) {
-                const best = pickBestGenericCandidate(rows, state.question);
-                if (best?.id) {
-                  return {
-                    nextToolUse: normalizeToolUse(
-                      "impact_downstream",
-                      { query: best.id },
-                      state.step + 1,
-                      state.linkedEntities
-                    ),
-                  };
+                if (isProvenanceQuestion(state.question)) {
+                  const best = pickBestGenericCandidate(rows, state.question);
+                  if (best?.id) {
+                    return {
+                      nextToolUse: normalizeToolUse(
+                        "provenance_chain",
+                        { nodeId: best.id },
+                        state.step + 1,
+                        state.linkedEntities
+                      ),
+                    };
+                  }
                 }
-              }
-              if (isNodeAttributeQuestion(state.question)) {
-                const best = pickBestGenericCandidate(rows, state.question);
-                if (best?.id) {
-                  return {
-                    nextToolUse: normalizeToolUse(
-                      "node_detail",
-                      { nodeId: best.id },
-                      state.step + 1,
-                      state.linkedEntities
-                    ),
-                  };
+                if (isImpactQuestion(state.question)) {
+                  const best = pickBestGenericCandidate(rows, state.question);
+                  if (best?.id) {
+                    return {
+                      nextToolUse: normalizeToolUse(
+                        "impact_downstream",
+                        { query: best.id },
+                        state.step + 1,
+                        state.linkedEntities
+                      ),
+                    };
+                  }
                 }
+                if (isNodeAttributeQuestion(state.question)) {
+                  const best = pickBestGenericCandidate(rows, state.question);
+                  if (best?.id) {
+                    return {
+                      nextToolUse: normalizeToolUse(
+                        "node_detail",
+                        { nodeId: best.id },
+                        state.step + 1,
+                        state.linkedEntities
+                      ),
+                    };
+                  }
+                }
+                return {
+                  done: true,
+                  finalAnswer: "I resolved candidate entities but need one more constraint to choose the correct governance query. Please specify target type: dataset, model, pipeline, or donor.",
+                };
               }
-              return {
-                done: true,
-                finalAnswer: "I resolved candidate entities but need one more constraint to choose the correct governance query. Please specify target type: dataset, model, pipeline, or donor.",
-              };
             }
           }
         }

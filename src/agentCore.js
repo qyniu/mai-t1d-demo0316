@@ -2982,6 +2982,7 @@ Planning process:
 3) Use linked_entities and prior evidence to fill canonical IDs and scope.
 4) If the user mentions an entity but exact graph ID is unclear, ambiguous, or unresolved, you MUST choose search_nodes first before a final governance intent.
 5) Prefer high-level governance intents over low-level graph traversal when a high-level intent directly fits.
+6) Do not rely on keyword dictionaries. Use semantic intent understanding from question meaning + tool descriptions + graph ontology + prior evidence.
 
 Available intents: ${INTENT_ENUM.join(", ")}
 
@@ -2997,6 +2998,9 @@ Decision policy:
 - Choose high-level intents when they can answer directly (for example datasets_for_model, models_for_dataset, impact_downstream, qc_pipeline_for_model_modality, qc_pipeline_owner, donor_attribute_ratio, reclassification_distribution_impact, embedding_leakage_between_models).
 - Use low-level intents (get_neighbors, set_operation, extract_donors) only when high-level intents cannot directly satisfy the task or when decomposition is required.
 - For entity-centric metadata questions, retrieve node_detail after entity resolution.
+- For donor-statistics questions on shared/intersection donor cohorts (e.g., "among donors used by both model A and model B"), plan two steps:
+  a) donor_overlap_between_models or training_donor_overlap_between_models to establish donor set;
+  b) donor_attribute_ratio with donorIds from step (a) for ratio/distribution.
 - For model-targeted intents, use canonical modelId when available from linked_entities or prior evidence.
 - Use "tool" when another query is needed.
 - Use "answer" only when evidence is sufficient to answer faithfully.
